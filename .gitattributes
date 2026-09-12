@@ -1,11 +1,32 @@
-*.jpg filter=lfs diff=lfs merge=lfs -text
-*.tga filter=lfs diff=lfs merge=lfs -text
-*.mp3 filter=lfs diff=lfs merge=lfs -text
-*.mp4 filter=lfs diff=lfs merge=lfs -text
-*.zip filter=lfs diff=lfs merge=lfs -text
+# Normalize text files (store as LF in the repo)
+* text=auto
+
+# Unity text assets (YAML) - keep normalized
+*.cs     text
+*.shader text
+*.cginc  text
+*.txt    text
+*.meta   text
+*.unity  text
+*.prefab text
+*.mat    text
+*.asset  text
+
+# Treat big binaries as binary (no EOL conversion)
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.tga    binary
+*.fbx    binary
+*.obj    binary
+*.mp3    binary
+*.wav    binary
+*.ogg    binary
+*.mp4    binary
+*.zip    binary
+*.psd    binary
+
+# Git LFS patterns (if usas LFS)
 *.psd filter=lfs diff=lfs merge=lfs -text
 *.png filter=lfs diff=lfs merge=lfs -text
 *.fbx filter=lfs diff=lfs merge=lfs -text
-*.obj filter=lfs diff=lfs merge=lfs -text
-*.wav filter=lfs diff=lfs merge=lfs -text
-*.ogg filter=lfs diff=lfs merge=lfs -text
