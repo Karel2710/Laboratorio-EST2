@@ -2,143 +2,202 @@ using UnityEngine;
 
 class nodo
 {
-    public Any data;
+    public Player data;
     public nodo left;
     public nodo right;
-    public nodo(Any data)
+
+    public nodo(Player data)
     {
-        this.data=data;
-        this.left=null;
-        this.right=null;
+        this.data = data;
+        this.left = null;
+        this.right = null;
     }
 }
 
-
-
-
 class arbol
 {
-    public nodo root=null;
+    public nodo root = null;
+
     public arbol(nodo root)
     {
-        this.root=root;
+        this.root = root;
     }
+
     public void mayor(nodo node)
     {
-        if(node!=null)
+        if (node != null)
         {
             Debug.Log(node.data.nombre);
             mayor(node.right);
             mayor(node.left);
         }
     }
+
     public void insertar(nodo newNode)
     {
-        if(root==null)
+        if (root == null)
         {
-            root=newNode;
+            root = newNode;
         }
         else
         {
-            nodo current=root;
-            while(true)
+            nodo current = root;
+
+            while (true)
             {
-                if(newNode.data.Id<current.data.Id)
+                if (newNode.data.Id < current.data.Id)
                 {
-                    if(current.left==null)
+                    if (current.left == null)
                     {
-                        current.left=newNode;
+                        current.left = newNode;
                         break;
                     }
                     else
                     {
-                        current=current.left;
+                        current = current.left;
                     }
                 }
                 else
                 {
-                    if(current.right==null)
+                    if (current.right == null)
                     {
-                        current.right=newNode;
+                        current.right = newNode;
                         break;
                     }
                     else
                     {
-                        current=current.right;
+                        current = current.right;
                     }
                 }
             }
         }
     }
-    public void search(Any data)
+
+    public nodo search(int data)
     {
-        nodo p; nodo padre=this.root;None;
-        while(p!=null)
+        nodo p = root;
+
+        while (p != null)
         {
-            if(data==p.data.Id){
-                return p;padre;
-            }else if(data<p.data.Id){
-                padre=p;
-                p=p.left;
+            if (data == p.data.Id)
+            {
+                return p;
             }
-            else{
-                p=p.right;
+            else
+            {
+                if (data < p.data.Id)
+                {
+                    p = p.left;
+                }
+                else
+                {
+                    p = p.right;
+                }
             }
         }
-        return p;padre;
+
+        return null;
     }
-    public void eliminar(Any data)
+
+    public void eliminar(int data)
     {
-        nodo p; nodo padre = this.search(data);
+        nodo p = root;
+        nodo padre = null;
+
+        while (p != null && p.data.Id != data)
+        {
+            padre = p;
+
+            if (data < p.data.Id)
+            {
+                p = p.left;
+            }
+            else
+            {
+                p = p.right;
+            }
+        }
+
         if (p == null)
         {
             return;
         }
-        else if (p.left == null && p.right == null)
+
+        // Nodo hoja
+        if (p.left == null && p.right == null)
         {
-            if (p == padre.left)
+            if (p == root)
             {
-                padre.left = null;
+                root = null;
             }
             else
             {
-                padre.right = null;
+                if (p == padre.left)
+                {
+                    padre.left = null;
+                }
+                else
+                {
+                    padre.right = null;
+                }
             }
         }
+
+        // Nodo con hijo izquierdo
         else if (p.left != null && p.right == null)
         {
-            if (p == padre.left)
+            if (p == root)
             {
-                padre.left = p.left;
+                root = p.left;
             }
             else
             {
-                padre.right = p.left;
+                if (p == padre.left)
+                {
+                    padre.left = p.left;
+                }
+                else
+                {
+                    padre.right = p.left;
+                }
             }
         }
+
+        // Nodo con hijo derecho
         else if (p.left == null && p.right != null)
         {
-            if (p == padre.left)
+            if (p == root)
             {
-                padre.left = p.right;
+                root = p.right;
             }
             else
             {
-                padre.right = p.right;
+                if (p == padre.left)
+                {
+                    padre.left = p.right;
+                }
+                else
+                {
+                    padre.right = p.right;
+                }
             }
         }
+
+        // Nodo con dos hijos
         else
         {
-            // El nodo tiene 2 hijos (predecesor)
             nodo pad_pred = p;
             nodo p_pred = p.left;
+
             while (p_pred.right != null)
             {
                 pad_pred = p_pred;
                 p_pred = p_pred.right;
             }
+
             p.data = p_pred.data;
-            if (p == pad_pred)
+
+            if (pad_pred == p)
             {
                 p.left = p_pred.left;
             }
