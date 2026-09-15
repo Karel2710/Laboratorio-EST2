@@ -30,8 +30,18 @@ public class ControladorArbolUI : MonoBehaviour
     [Header("Auto-Generación de UI si no está asignada")]
     [SerializeField] private bool autoGenerarUISiFalta = true;
 
+    [System.Serializable]
+    private class DatosArbolJugadores
+    {
+        public List<Jugador> listaJugadores = new List<Jugador>();
+    }
+
+    private string rutaArchivoArbol;
+
     private void Awake()
     {
+        rutaArchivoArbol = System.IO.Path.Combine(Application.persistentDataPath, "jugadores_arbol.json");
+
         if (autoGenerarUISiFalta && (panelRegistro == null || inputNombre == null || inputId == null))
         {
             ConstruirUIAutomaticamente();
@@ -50,8 +60,7 @@ public class ControladorArbolUI : MonoBehaviour
             panelRegistro.SetActive(abrirPanelAlIniciar);
         }
 
-        MostrarMensajeFeedback("Sistema de Árbol BST listo. Ingrese los datos del jugador.", new Color(0.2f, 0.9f, 0.4f));
-        ActualizarVisualizacionArbol();
+        CargarArbolDesdeDisco();
     }
 
     /// <summary>
@@ -99,7 +108,8 @@ public class ControladorArbolUI : MonoBehaviour
 
         if (insertado)
         {
-            MostrarMensajeFeedback($"¡Jugador '{nombre}' (ID: {id}, Vida: {vida}) insertado con éxito!", new Color(0.2f, 0.9f, 0.4f));
+            GuardarArbolEnDisco();
+            MostrarMensajeFeedback($"¡Jugador '{nombre}' (ID: {id}, Vida: {vida}) guardado con éxito!", new Color(0.2f, 0.9f, 0.4f));
             LimpiarInputsRegistro();
             ActualizarVisualizacionArbol();
         }
@@ -171,6 +181,7 @@ public class ControladorArbolUI : MonoBehaviour
         bool eliminado = arbolJugadores.Eliminar(idAEliminar);
         if (eliminado)
         {
+            GuardarArbolEnDisco();
             MostrarMensajeFeedback($"Jugador con ID {idAEliminar} eliminado del árbol.", new Color(0.2f, 0.9f, 0.4f));
             LimpiarInputsRegistro();
             ActualizarVisualizacionArbol();
@@ -179,6 +190,60 @@ public class ControladorArbolUI : MonoBehaviour
         {
             MostrarMensajeFeedback($"No se pudo eliminar: El ID {idAEliminar} no existe.", new Color(1f, 0.35f, 0.35f));
         }
+    }
+
+    /// <summary>
+    /// Guarda todos los nodos del árbol en un archivo JSON en disco para persistencia permanente.
+    /// </summary>
+    public void GuardarArbolEnDisco()
+    {
+        try
+        {
+            DatosArbolJugadores datos = new DatosArbolJugadores();
+            datos.listaJugadores = arbolJugadores.InOrden();
+
+            string json = JsonUtility.ToJson(datos, true);
+            System.IO.File.WriteAllText(rutaArchivoArbol, json);
+            Debug.Log($"[ControladorArbolUI] Árbol guardado permanentemente en: {rutaArchivoArbol}");
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"[ControladorArbolUI] Error al guardar árbol en disco: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Carga los datos guardados en disco y reconstruye el árbol binario.
+    /// </summary>
+    public void CargarArbolDesdeDisco()
+    {
+        try
+        {
+            if (System.IO.File.Exists(rutaArchivoArbol))
+            {
+                string json = System.IO.File.ReadAllText(rutaArchivoArbol);
+                DatosArbolJugadores datos = JsonUtility.FromJson<DatosArbolJugadores>(json);
+
+                if (datos != null && datos.listaJugadores != null && datos.listaJugadores.Count > 0)
+                {
+                    arbolJugadores.Limpiar();
+                    foreach (Jugador j in datos.listaJugadores)
+                    {
+                        arbolJugadores.Insertar(j);
+                    }
+                    MostrarMensajeFeedback($"Árbol cargado ({datos.listaJugadores.Count} jugadores recuperados).", new Color(0.2f, 0.9f, 0.4f));
+                    ActualizarVisualizacionArbol();
+                    return;
+                }
+            }
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"[ControladorArbolUI] Error al cargar árbol desde disco: {ex.Message}");
+        }
+
+        MostrarMensajeFeedback("Sistema de Árbol BST listo. Ingrese los datos del jugador.", new Color(0.2f, 0.9f, 0.4f));
+        ActualizarVisualizacionArbol();
     }
 
     /// <summary>
