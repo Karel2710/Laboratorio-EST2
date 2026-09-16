@@ -282,3 +282,19 @@ Received Import Request.
 Start importing Assets/levelManager.cs using Guid(7b722ca4657363b49b0a3d8df0056761) Importer(815301076,1909f56bfc062723c751e8b465ee728b) (PreviewImporter) -> (artifact id: 'd437762f8737b22d954694abfd6b4c99') in 0.0027135 seconds
 Number of updated asset objects reloaded before import = 0Number of asset objects unloaded after import = 0
 
+========================================================================
+Received Import Request.
+  Time since last request: 275.849705 seconds.
+  path: Assets/arte
+  artifactKey: Guid(9c3ece0c52a7e5641a66079ed376af04) Importer(815301076,1909f56bfc062723c751e8b465ee728b)
+Start importing Assets/arte using Guid(9c3ece0c52a7e5641a66079ed376af04) Importer(815301076,1909f56bfc062723c751e8b465ee728b) (PreviewImporter) -> (artifact id: '2add39621ef653cd83943d65c270fd09') in 0.1066144 seconds
+Number of updated asset objects reloaded before import = 0Number of asset objects unloaded after import = 0
+
+========================================================================
+Received Import Request.
+  Time since last request: 0.276917 seconds.
+  path: Assets/arte/prefabs
+  artifactKey: Guid(97fd1107f682c9848b1772c8c9dc2dbf) Importer(815301076,1909f56bfc062723c751e8b465ee728b)
+Start importing Assets/arte/prefabs using Guid(97fd1107f682c9848b1772c8c9dc2dbf) Importer(815301076,1909f56bfc062723c751e8b465ee728b) (PreviewImporter) -> (artifact id: 'eb929f25bd77e799bb85bea033a34c47') in 0.0043529 seconds
+Number of updated asset objects reloaded before import = 0Number of asset objects unloaded after import = 0
+
