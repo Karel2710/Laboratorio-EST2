@@ -62,12 +62,15 @@ public class LeaderboardJSON : MonoBehaviour
         {
             string json = File.ReadAllText(rutaArchivo);
             
-            DatosLeaderboard datos = JsonUtility.FromJson<DatosLeaderboard>(json);
-            
-            if (datos != null && datos.listaPuntajes != null)
+            if (!string.IsNullOrWhiteSpace(json))
             {
-                tablaPuntajes = datos.listaPuntajes;
-                Debug.Log("Leaderboard cargado correctamente.");
+                DatosLeaderboard datos = JsonUtility.FromJson<DatosLeaderboard>(json);
+                
+                if (datos != null && datos.listaPuntajes != null)
+                {
+                    tablaPuntajes = datos.listaPuntajes;
+                    Debug.Log("Leaderboard cargado correctamente.");
+                }
             }
         }
         else

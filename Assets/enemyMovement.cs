@@ -21,28 +21,21 @@ public class enemyMovement : MonoBehaviour
             rb = GetComponent<Rigidbody2D>();
         }
 
-        if (levelManager.main != null && levelManager.main.Path != null && levelManager.main.Path.Length > 0)
-        {
-            target = levelManager.main.Path[pathIndex];
-        }
+        ObtenerSiguienteObjetivo();
     }
 
     private void Update()
     {
-        if (target == null || levelManager.main == null) return;
+        if (target == null)
+        {
+            ObtenerSiguienteObjetivo();
+            if (target == null) return;
+        }
 
         if (Vector2.Distance(transform.position, target.position) <= 0.1f)
         {
             pathIndex++;
-            if (pathIndex >= levelManager.main.Path.Length)
-            {
-                Destroy(gameObject);
-                return;
-            }
-            else
-            {
-                target = levelManager.main.Path[pathIndex];
-            }
+            ObtenerSiguienteObjetivo();
         }
     }
 
@@ -51,6 +44,22 @@ public class enemyMovement : MonoBehaviour
         if (target == null || rb == null) return;
 
         Vector2 dir = ((Vector2)target.position - rb.position).normalized;
-        rb.linearVelocity = dir * moveSpeed; // Unity 6 usa linearVelocity (o velocity con fallback)
+        rb.linearVelocity = dir * moveSpeed;
+    }
+
+    private void ObtenerSiguienteObjetivo()
+    {
+        if (levelManager.main != null && levelManager.main.Path != null && levelManager.main.Path.Length > 0)
+        {
+            if (pathIndex >= 0 && pathIndex < levelManager.main.Path.Length)
+            {
+                target = levelManager.main.Path[pathIndex];
+            }
+            else
+            {
+                target = null;
+                Destroy(gameObject);
+            }
+        }
     }
 }

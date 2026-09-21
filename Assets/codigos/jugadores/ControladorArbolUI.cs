@@ -25,7 +25,7 @@ public class ControladorArbolUI : MonoBehaviour
 
     [Header("Panel Principal")]
     public GameObject panelRegistro;
-    [SerializeField] private bool abrirPanelAlIniciar = false;
+    [SerializeField] private bool abrirPanelAlIniciar = true;
 
     [Header("Auto-Generación de UI si no está asignada")]
     [SerializeField] private bool autoGenerarUISiFalta = true;
@@ -61,6 +61,16 @@ public class ControladorArbolUI : MonoBehaviour
         }
 
         CargarArbolDesdeDisco();
+        AsegurarSistemasDefensa();
+    }
+
+    private void AsegurarSistemasDefensa()
+    {
+        if (FindFirstObjectByType<TowerPlacementManager>() == null)
+        {
+            GameObject managerObj = new GameObject("TowerPlacementManager");
+            managerObj.AddComponent<TowerPlacementManager>();
+        }
     }
 
     /// <summary>
@@ -334,7 +344,40 @@ public class ControladorArbolUI : MonoBehaviour
 
         canvasObj.AddComponent<GraphicRaycaster>();
 
-        // 3. Botón flotante para abrir/cerrar el panel
+        // 3. Banner Superior HUD de Nivel e Instrucciones
+        GameObject panelHud = new GameObject("PanelHUDInfo");
+        panelHud.transform.SetParent(canvasObj.transform, false);
+        Image imgHud = panelHud.AddComponent<Image>();
+        imgHud.color = new Color(0.12f, 0.15f, 0.22f, 0.90f);
+
+        RectTransform rtHud = panelHud.GetComponent<RectTransform>();
+        rtHud.anchorMin = new Vector2(0.5f, 1);
+        rtHud.anchorMax = new Vector2(0.5f, 1);
+        rtHud.pivot = new Vector2(0.5f, 1);
+        rtHud.anchoredPosition = new Vector2(0, -10);
+        rtHud.sizeDelta = new Vector2(760, 50);
+
+        Text txtInstruccion = CrearTexto(panelHud.transform, "TxtInstruccion", "🛡️ Haz clic en los cuadrados del mapa para colocar defensas 🏹", 14, TextAnchor.MiddleLeft, new Color(0.95f, 0.9f, 0.3f), fuente, true);
+        RectTransform rtTxtInst = txtInstruccion.GetComponent<RectTransform>();
+        rtTxtInst.anchorMin = new Vector2(0, 0);
+        rtTxtInst.anchorMax = new Vector2(0.55f, 1);
+        rtTxtInst.offsetMin = new Vector2(15, 0);
+        rtTxtInst.offsetMax = new Vector2(0, 0);
+
+        // Botones de Nivel en el HUD
+        Button btnNivel1 = CrearBoton(panelHud.transform, "BtnNivel1", "Nivel 1", new Color(0.2f, 0.6f, 0.3f), fuente);
+        SetRect(btnNivel1.GetComponent<RectTransform>(), 430, -8, 90, 34);
+        btnNivel1.onClick.AddListener(() => { if (EnemySpawner.instance != null) EnemySpawner.instance.CargarConfiguracionNivel(0); });
+
+        Button btnNivel2 = CrearBoton(panelHud.transform, "BtnNivel2", "Nivel 2", new Color(0.8f, 0.5f, 0.1f), fuente);
+        SetRect(btnNivel2.GetComponent<RectTransform>(), 530, -8, 90, 34);
+        btnNivel2.onClick.AddListener(() => { if (EnemySpawner.instance != null) EnemySpawner.instance.CargarConfiguracionNivel(1); });
+
+        Button btnNivel3 = CrearBoton(panelHud.transform, "BtnNivel3", "Nivel 3", new Color(0.8f, 0.2f, 0.2f), fuente);
+        SetRect(btnNivel3.GetComponent<RectTransform>(), 630, -8, 90, 34);
+        btnNivel3.onClick.AddListener(() => { if (EnemySpawner.instance != null) EnemySpawner.instance.CargarConfiguracionNivel(2); });
+
+        // 4. Botón flotante para abrir/cerrar el panel
         Button botonToggle = CrearBoton(canvasObj.transform, "BotonTogglePanel", "👥 Árbol Jugadores", new Color(0.15f, 0.45f, 0.75f, 0.95f), fuente);
         RectTransform rtToggle = botonToggle.GetComponent<RectTransform>();
         rtToggle.anchorMin = new Vector2(1, 1);
@@ -344,7 +387,7 @@ public class ControladorArbolUI : MonoBehaviour
         rtToggle.sizeDelta = new Vector2(170, 42);
         botonToggle.onClick.AddListener(AlternarVisibilidadPanel);
 
-        // 4. Panel Principal
+        // 5. Panel Principal
         panelRegistro = new GameObject("PanelRegistroJugadores");
         panelRegistro.transform.SetParent(canvasObj.transform, false);
         Image imgPanel = panelRegistro.AddComponent<Image>();

@@ -16,6 +16,11 @@ public class levelManager : MonoBehaviour
 
     private void Awake()
     {
+        if (main != null && main != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
         main = this;
     }
 }
