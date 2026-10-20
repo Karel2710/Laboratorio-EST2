@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.EventSystems;
 
 namespace TowerDefenseGameplay
@@ -157,6 +157,11 @@ namespace TowerDefenseGameplay
             torreInstanciada = torreObj.AddComponent<Torre>();
             torreInstanciada.ConfigurarTipo(tipo);
 
+            // ── Integración Red de Energía MST ──────────────────────────────────
+            // Notificar al EnergyNetworkManager para que recalcule el MST con la nueva torre.
+            RedEnergiaMST.EnergyNetworkManager.Instance?.RegistrarTorre(torreObj);
+            // ────────────────────────────────────────────────────────────────────
+
             RestaurarColor();
 
             if (GameManager.Instance != null)
@@ -165,6 +170,38 @@ namespace TowerDefenseGameplay
                 GameManager.Instance.MostrarNotificacion($"🔨 ¡Torre {tipo} construida en {name}! ({infoCosto})");
             }
 
+            return true;
+        }
+
+        /// <summary>
+        /// Vende y destruye la torre de esta casilla, devuelve parte del oro al jugador
+        /// y notifica a la Red de Energía para que recalcule el MST sin esta torre.
+        /// </summary>
+        /// <param name="porcentajeReembolso">Fracción del costo de construcción devuelta (default 0.5 = 50%).</param>
+        public bool VenderTorre(float porcentajeReembolso = 0.5f)
+        {
+            if (!TieneTorre) return false;
+
+            // ── Integración Red de Energía MST ──────────────────────────────────
+            // Desregistrar ANTES de destruir el GameObject para que TowerNode sea válido.
+            RedEnergiaMST.EnergyNetworkManager.Instance?.DesregistrarTorre(torreInstanciada.gameObject);
+            // ────────────────────────────────────────────────────────────────────
+
+            int reembolso = Mathf.RoundToInt(GameManager.Instance != null
+                ? GameManager.Instance.ObtenerCostoTorre(torreInstanciada.tipo) * porcentajeReembolso
+                : costoTorre * porcentajeReembolso);
+
+            if (GameManager.Instance != null)
+            {
+                GameManager.Instance.oroActual += reembolso;
+                GameManager.Instance.MostrarNotificacion(
+                    $"💰 Torre {torreInstanciada.tipo} vendida. Reembolso: +{reembolso} de Oro."
+                );
+            }
+
+            Destroy(torreInstanciada.gameObject);
+            torreInstanciada = null;
+            RestaurarColor();
             return true;
         }
     }
