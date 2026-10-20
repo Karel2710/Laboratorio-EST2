@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 using UnityEngine.UI;
+using GrafosEST2;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem.UI;
 #else
@@ -10,8 +11,20 @@ using UnityEngine.EventSystems;
 
 public class ControladorArbolUI : MonoBehaviour
 {
+    public static ControladorArbolUI Instance { get; private set; }
+
+    public enum ModoRecorridoBST
+    {
+        InOrden,
+        PreOrden,
+        PostOrden
+    }
+
     [Header("Instancia del Árbol")]
     public Arbol arbolJugadores = new Arbol();
+
+    [Header("Modo de Recorrido Actual")]
+    public ModoRecorridoBST modoActual = ModoRecorridoBST.InOrden;
 
     [Header("Campos de Entrada (InputFields)")]
     public InputField inputNombre;
@@ -19,9 +32,15 @@ public class ControladorArbolUI : MonoBehaviour
     public InputField inputVida;
     public InputField inputBuscarId;
 
-    [Header("Textos de Información")]
+    [Header("Textos de Información y Métricas")]
     public Text textoFeedback;
     public Text textoVisualizacionArbol;
+    public Text textoMetricasArbol;
+
+    [Header("Botones de Recorrido BST")]
+    public Button btnTabInOrden;
+    public Button btnTabPreOrden;
+    public Button btnTabPostOrden;
 
     [Header("Panel Principal")]
     public GameObject panelRegistro;
@@ -37,9 +56,21 @@ public class ControladorArbolUI : MonoBehaviour
     }
 
     private string rutaArchivoArbol;
+    private Color colorTabActivo = new Color(0.12f, 0.55f, 0.85f, 1f);
+    private Color colorTabInactivo = new Color(0.12f, 0.16f, 0.24f, 0.95f);
 
     private void Awake()
     {
+        if (Instance == null)
+        {
+            Instance = this;
+        }
+        else if (Instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
         rutaArchivoArbol = System.IO.Path.Combine(Application.persistentDataPath, "jugadores_arbol.json");
 
         if (autoGenerarUISiFalta && (panelRegistro == null || inputNombre == null || inputId == null))
@@ -61,6 +92,7 @@ public class ControladorArbolUI : MonoBehaviour
         }
 
         CargarArbolDesdeDisco();
+        ActualizarEstilosTabs();
     }
 
     /// <summary>
@@ -77,19 +109,19 @@ public class ControladorArbolUI : MonoBehaviour
         string nombre = inputNombre.text.Trim();
         if (string.IsNullOrEmpty(nombre))
         {
-            MostrarMensajeFeedback("El nombre no puede estar vacío.", new Color(1f, 0.75f, 0.2f));
+            MostrarMensajeFeedback("⚠️ El nombre no puede estar vacío.", new Color(1f, 0.75f, 0.2f));
             return;
         }
 
         if (!int.TryParse(inputId.text.Trim(), out int id))
         {
-            MostrarMensajeFeedback("El ID debe ser un número entero válido.", new Color(1f, 0.75f, 0.2f));
+            MostrarMensajeFeedback("⚠️ El ID debe ser un número entero válido.", new Color(1f, 0.75f, 0.2f));
             return;
         }
 
         if (id <= 0)
         {
-            MostrarMensajeFeedback("El ID debe ser mayor a 0.", new Color(1f, 0.75f, 0.2f));
+            MostrarMensajeFeedback("⚠️ El ID debe ser mayor a 0.", new Color(1f, 0.75f, 0.2f));
             return;
         }
 
@@ -98,24 +130,31 @@ public class ControladorArbolUI : MonoBehaviour
         {
             if (!int.TryParse(inputVida.text.Trim(), out vida) || vida <= 0)
             {
-                MostrarMensajeFeedback("La vida debe ser un número positivo.", new Color(1f, 0.75f, 0.2f));
+                MostrarMensajeFeedback("⚠️ La vida debe ser un número positivo.", new Color(1f, 0.75f, 0.2f));
                 return;
             }
         }
 
-        Jugador nuevoJugador = new Jugador(vida, id, nombre);
+        Jugador nuevoJugador = new Jugador(vida, id, nombre, 1, 0);
         bool insertado = arbolJugadores.Insertar(nuevoJugador);
 
         if (insertado)
         {
             GuardarArbolEnDisco();
-            MostrarMensajeFeedback($"¡Jugador '{nombre}' (ID: {id}, Vida: {vida}) guardado con éxito!", new Color(0.2f, 0.9f, 0.4f));
+
+            // Si no había jugador activo en la partida, asignar este automáticamente
+            if (GameManager.Instance != null && GameManager.Instance.jugadorActivo == null)
+            {
+                AsignarJugadorActivo(nuevoJugador);
+            }
+
+            MostrarMensajeFeedback($"✓ ¡Comandante '{nombre}' (ID: {id}) registrado con éxito!", new Color(0.2f, 0.95f, 0.45f));
             LimpiarInputsRegistro();
             ActualizarVisualizacionArbol();
         }
         else
         {
-            MostrarMensajeFeedback($"Error: Ya existe un jugador en el árbol con el ID {id}.", new Color(1f, 0.35f, 0.35f));
+            MostrarMensajeFeedback($"✕ Error: Ya existe un comandante con el ID {id} en el BST.", new Color(1f, 0.35f, 0.35f));
         }
     }
 
@@ -137,14 +176,14 @@ public class ControladorArbolUI : MonoBehaviour
 
         if (string.IsNullOrEmpty(textoId) || !int.TryParse(textoId, out int idABuscar))
         {
-            MostrarMensajeFeedback("Ingrese un ID numérico válido para buscar.", new Color(1f, 0.75f, 0.2f));
+            MostrarMensajeFeedback("⚠️ Ingrese un ID numérico válido para buscar.", new Color(1f, 0.75f, 0.2f));
             return;
         }
 
         Jugador encontrado = arbolJugadores.Buscar(idABuscar);
         if (encontrado != null)
         {
-            MostrarMensajeFeedback($"Encontrado: {encontrado}", new Color(0.3f, 0.8f, 1f));
+            MostrarMensajeFeedback($"✓ Localizado en BST: {encontrado.nombre} (ID: {encontrado.Id}, Vida: {encontrado.vida})", new Color(0.3f, 0.85f, 1f));
 
             if (inputNombre != null) inputNombre.text = encontrado.nombre;
             if (inputId != null) inputId.text = encontrado.Id.ToString();
@@ -152,7 +191,67 @@ public class ControladorArbolUI : MonoBehaviour
         }
         else
         {
-            MostrarMensajeFeedback($"No se encontró ningún jugador con ID: {idABuscar} en el árbol.", new Color(1f, 0.35f, 0.35f));
+            MostrarMensajeFeedback($"✕ No se encontró ningún comandante con ID: {idABuscar} en el BST.", new Color(1f, 0.35f, 0.35f));
+        }
+    }
+
+    /// <summary>
+    /// Asigna el jugador con el ID indicado en los campos de entrada como el comandante activo del juego.
+    /// </summary>
+    public void AsignarComandanteAlMando()
+    {
+        string textoId = string.Empty;
+        if (inputId != null && !string.IsNullOrEmpty(inputId.text.Trim()))
+        {
+            textoId = inputId.text.Trim();
+        }
+        else if (inputBuscarId != null && !string.IsNullOrEmpty(inputBuscarId.text.Trim()))
+        {
+            textoId = inputBuscarId.text.Trim();
+        }
+
+        if (string.IsNullOrEmpty(textoId) || !int.TryParse(textoId, out int idABuscar))
+        {
+            MostrarMensajeFeedback("⚠️ Ingrese o busque un ID válido para asignar al mando.", new Color(1f, 0.75f, 0.2f));
+            return;
+        }
+
+        Jugador encontrado = arbolJugadores.Buscar(idABuscar);
+        if (encontrado != null)
+        {
+            AsignarJugadorActivo(encontrado);
+            MostrarMensajeFeedback($"🎯 ¡Comandante '{encontrado.nombre}' desplegado al Mando Táctico!", new Color(0.2f, 0.95f, 0.5f));
+            ActualizarVisualizacionArbol();
+        }
+        else
+        {
+            MostrarMensajeFeedback($"✕ No se encontró ningún comandante con ID: {idABuscar}.", new Color(1f, 0.35f, 0.35f));
+        }
+    }
+
+    private void AsignarJugadorActivo(Jugador j)
+    {
+        if (j == null) return;
+
+        if (GameManager.Instance != null)
+        {
+            GameManager.Instance.jugadorActivo = j;
+        }
+
+        if (ControladorHabilidadesUI.Instance != null)
+        {
+            ControladorHabilidadesUI.Instance.jugadorActivo = j;
+            if (ControladorHabilidadesUI.Instance.sistemaHabilidades != null)
+            {
+                ControladorHabilidadesUI.Instance.sistemaHabilidades.SincronizarConJugador(j);
+            }
+            ControladorHabilidadesUI.Instance.ActualizarInfoJugador();
+            ControladorHabilidadesUI.Instance.ActualizarListaVisual();
+        }
+
+        if (HUDJuego.Instance != null)
+        {
+            HUDJuego.Instance.ActualizarHUD();
         }
     }
 
@@ -174,7 +273,7 @@ public class ControladorArbolUI : MonoBehaviour
 
         if (string.IsNullOrEmpty(textoId) || !int.TryParse(textoId, out int idAEliminar))
         {
-            MostrarMensajeFeedback("Ingrese un ID numérico válido para eliminar.", new Color(1f, 0.75f, 0.2f));
+            MostrarMensajeFeedback("⚠️ Ingrese un ID numérico válido para eliminar.", new Color(1f, 0.75f, 0.2f));
             return;
         }
 
@@ -182,13 +281,40 @@ public class ControladorArbolUI : MonoBehaviour
         if (eliminado)
         {
             GuardarArbolEnDisco();
-            MostrarMensajeFeedback($"Jugador con ID {idAEliminar} eliminado del árbol.", new Color(0.2f, 0.9f, 0.4f));
+            MostrarMensajeFeedback($"✓ Comandante con ID {idAEliminar} retirado del BST.", new Color(0.2f, 0.9f, 0.4f));
             LimpiarInputsRegistro();
             ActualizarVisualizacionArbol();
         }
         else
         {
-            MostrarMensajeFeedback($"No se pudo eliminar: El ID {idAEliminar} no existe.", new Color(1f, 0.35f, 0.35f));
+            MostrarMensajeFeedback($"✕ No se pudo eliminar: El ID {idAEliminar} no existe.", new Color(1f, 0.35f, 0.35f));
+        }
+    }
+
+    /// <summary>
+    /// Cambia el modo de recorrido del árbol y actualiza la vista.
+    /// </summary>
+    public void CambiarModoRecorrido(ModoRecorridoBST nuevoModo)
+    {
+        modoActual = nuevoModo;
+        ActualizarEstilosTabs();
+        ActualizarVisualizacionArbol();
+    }
+
+    private void ActualizarEstilosTabs()
+    {
+        SetTabStyle(btnTabInOrden, modoActual == ModoRecorridoBST.InOrden);
+        SetTabStyle(btnTabPreOrden, modoActual == ModoRecorridoBST.PreOrden);
+        SetTabStyle(btnTabPostOrden, modoActual == ModoRecorridoBST.PostOrden);
+    }
+
+    private void SetTabStyle(Button btn, bool activo)
+    {
+        if (btn == null) return;
+        Image img = btn.GetComponent<Image>();
+        if (img != null)
+        {
+            img.color = activo ? colorTabActivo : colorTabInactivo;
         }
     }
 
@@ -231,7 +357,7 @@ public class ControladorArbolUI : MonoBehaviour
                     {
                         arbolJugadores.Insertar(j);
                     }
-                    MostrarMensajeFeedback($"Árbol cargado ({datos.listaJugadores.Count} jugadores recuperados).", new Color(0.2f, 0.9f, 0.4f));
+                    MostrarMensajeFeedback($"✓ BST cargado ({datos.listaJugadores.Count} comandantes en memoria).", new Color(0.2f, 0.9f, 0.4f));
                     ActualizarVisualizacionArbol();
                     return;
                 }
@@ -242,30 +368,70 @@ public class ControladorArbolUI : MonoBehaviour
             Debug.LogError($"[ControladorArbolUI] Error al cargar árbol desde disco: {ex.Message}");
         }
 
-        MostrarMensajeFeedback("Sistema de Árbol BST listo. Ingrese los datos del jugador.", new Color(0.2f, 0.9f, 0.4f));
+        MostrarMensajeFeedback("Terminal BST en línea. Ingrese datos para registrar un comandante.", new Color(0.3f, 0.85f, 1f));
         ActualizarVisualizacionArbol();
     }
 
     /// <summary>
-    /// Actualiza el cuadro de texto que muestra el recorrido In-Orden del árbol.
+    /// Actualiza el cuadro de texto y las métricas según el recorrido seleccionado.
     /// </summary>
     public void ActualizarVisualizacionArbol()
     {
+        if (arbolJugadores == null) return;
+
+        List<Jugador> jugadores;
+        string tituloModo;
+
+        switch (modoActual)
+        {
+            case ModoRecorridoBST.PreOrden:
+                jugadores = arbolJugadores.PreOrden();
+                tituloModo = "Pre-Orden (Raíz ➔ Izq ➔ Der)";
+                break;
+            case ModoRecorridoBST.PostOrden:
+                jugadores = arbolJugadores.PostOrden();
+                tituloModo = "Post-Orden (Izq ➔ Der ➔ Raíz)";
+                break;
+            case ModoRecorridoBST.InOrden:
+            default:
+                jugadores = arbolJugadores.InOrden();
+                tituloModo = "In-Orden (Orden Ascendente por ID)";
+                break;
+        }
+
+        int total = arbolJugadores.Contar();
+        int altura = arbolJugadores.Altura();
+        string raizId = arbolJugadores.root != null ? arbolJugadores.root.data.Id.ToString() : "Ninguna";
+
+        if (textoMetricasArbol != null)
+        {
+            textoMetricasArbol.text = $"📊 <b>Total:</b> <color=#00e5ff>{total}</color>  |  <b>Raíz BST:</b> <color=#ffd700>ID {raizId}</color>  |  <b>Niveles:</b> <color=#44ff88>{altura}</color>";
+        }
+
         if (textoVisualizacionArbol == null) return;
 
-        List<Jugador> jugadoresEnOrden = arbolJugadores.InOrden();
-
-        if (jugadoresEnOrden.Count == 0)
+        if (jugadores.Count == 0)
         {
-            textoVisualizacionArbol.text = "El árbol de jugadores está vacío.";
+            textoVisualizacionArbol.text = "<color=#94a3b8><i>El árbol BST de comandantes está vacío.\nUse el formulario superior para registrar el primer comandante.</i></color>";
             return;
         }
 
+        Jugador comandanteActivo = GameManager.Instance != null ? GameManager.Instance.jugadorActivo : null;
+
         StringBuilder sb = new StringBuilder();
-        sb.AppendLine($"--- Árbol BST de Jugadores (Total: {jugadoresEnOrden.Count}) ---");
-        for (int i = 0; i < jugadoresEnOrden.Count; i++)
+        sb.AppendLine($"<color=#66ddff><b>══ Recorrido {tituloModo} ══</b></color>");
+        sb.AppendLine();
+
+        for (int i = 0; i < jugadores.Count; i++)
         {
-            sb.AppendLine($"{i + 1}. {jugadoresEnOrden[i]}");
+            Jugador j = jugadores[i];
+            bool esActivo = comandanteActivo != null && comandanteActivo.Id == j.Id;
+            string tagActivo = esActivo ? "  <color=#44ff88><b>[★ EN MANDO TÁCTICO]</b></color>" : "";
+            string numColor = esActivo ? "#44ff88" : "#00e5ff";
+
+            sb.AppendLine($"<color={numColor}><b>#{i + 1:00}</b></color> <b>{j.nombre}</b> (ID: <color=#ffd700><b>{j.Id}</b></color>){tagActivo}");
+            sb.AppendLine($"     <color=#94a3b8>❤️ Vida:</color> {j.vida} PV  |  <color=#94a3b8>⭐ Nivel:</color> {j.nivel}  |  <color=#94a3b8>💎 Pts DAG:</color> {j.puntosHabilidad}  |  <color=#94a3b8>💰 Oro:</color> {j.oro}");
+            sb.AppendLine();
         }
 
         textoVisualizacionArbol.text = sb.ToString();
@@ -284,6 +450,10 @@ public class ControladorArbolUI : MonoBehaviour
         if (panelRegistro != null)
         {
             panelRegistro.SetActive(!panelRegistro.activeSelf);
+            if (panelRegistro.activeSelf)
+            {
+                ActualizarVisualizacionArbol();
+            }
         }
     }
 
@@ -300,8 +470,8 @@ public class ControladorArbolUI : MonoBehaviour
     #region Auto Construcción de UI
 
     /// <summary>
-    /// Crea en tiempo de ejecución un Canvas interactivo con el panel de registro,
-    /// campos de texto (InputFields), botones y visualizador del árbol si no están creados.
+    /// Crea en tiempo de ejecución un Canvas interactivo con estética cyber-militar,
+    /// pestañas de recorrido, formulario estilizado, scrollbar táctico y métricas de balance.
     /// </summary>
     private void ConstruirUIAutomaticamente()
     {
@@ -325,7 +495,7 @@ public class ControladorArbolUI : MonoBehaviour
         GameObject canvasObj = new GameObject("Canvas_JugadoresBST");
         Canvas canvas = canvasObj.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 100;
+        canvas.sortingOrder = 105;
 
         CanvasScaler scaler = canvasObj.AddComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
@@ -334,116 +504,251 @@ public class ControladorArbolUI : MonoBehaviour
 
         canvasObj.AddComponent<GraphicRaycaster>();
 
-        // 3. Botón flotante para abrir/cerrar el panel
-        Button botonToggle = CrearBoton(canvasObj.transform, "BotonTogglePanel", "👥 Árbol Jugadores", new Color(0.15f, 0.45f, 0.75f, 0.95f), fuente);
+        // 3. Botón flotante para abrir/cerrar el panel (tactical pill)
+        Button botonToggle = CrearBoton(canvasObj.transform, "BotonTogglePanel", "👥 Mando BST", new Color(0.10f, 0.25f, 0.40f, 0.95f), fuente);
         RectTransform rtToggle = botonToggle.GetComponent<RectTransform>();
         rtToggle.anchorMin = new Vector2(1, 1);
         rtToggle.anchorMax = new Vector2(1, 1);
         rtToggle.pivot = new Vector2(1, 1);
-        rtToggle.anchoredPosition = new Vector2(-20, -20);
-        rtToggle.sizeDelta = new Vector2(170, 42);
+        rtToggle.anchoredPosition = new Vector2(-20, -18);
+        rtToggle.sizeDelta = new Vector2(145, 40);
         botonToggle.onClick.AddListener(AlternarVisibilidadPanel);
 
-        // 4. Panel Principal
+        Outline outToggle = botonToggle.gameObject.AddComponent<Outline>();
+        outToggle.effectColor = new Color(0.0f, 0.9f, 1f, 0.45f);
+        outToggle.effectDistance = new Vector2(1, -1);
+
+        // 4. Panel Principal (Modal Cyber-Militar)
         panelRegistro = new GameObject("PanelRegistroJugadores");
         panelRegistro.transform.SetParent(canvasObj.transform, false);
         Image imgPanel = panelRegistro.AddComponent<Image>();
-        imgPanel.color = new Color(0.10f, 0.12f, 0.18f, 0.94f);
+        imgPanel.color = new Color(0.07f, 0.09f, 0.14f, 0.97f);
+
+        Outline outPanel = panelRegistro.AddComponent<Outline>();
+        outPanel.effectColor = new Color(0.0f, 0.9f, 1f, 0.55f);
+        outPanel.effectDistance = new Vector2(2, -2);
 
         RectTransform rtPanel = panelRegistro.GetComponent<RectTransform>();
         rtPanel.anchorMin = new Vector2(0, 1);
         rtPanel.anchorMax = new Vector2(0, 1);
         rtPanel.pivot = new Vector2(0, 1);
-        rtPanel.anchoredPosition = new Vector2(25, -25);
-        rtPanel.sizeDelta = new Vector2(440, 680);
+        rtPanel.anchoredPosition = new Vector2(25, -20);
+        rtPanel.sizeDelta = new Vector2(500, 725);
 
-        // 5. Título y Botón Cerrar
-        Text titulo = CrearTexto(panelRegistro.transform, "Titulo", "GESTIÓN DE JUGADORES (BST)", 16, TextAnchor.MiddleCenter, new Color(0.35f, 0.85f, 1f), fuente, true);
+        // 5. Encabezado Táctico
+        GameObject headerObj = new GameObject("HeaderBST");
+        headerObj.transform.SetParent(panelRegistro.transform, false);
+        Image imgHeader = headerObj.AddComponent<Image>();
+        imgHeader.color = new Color(0.04f, 0.06f, 0.10f, 0.98f);
+        RectTransform rtHeader = headerObj.GetComponent<RectTransform>();
+        rtHeader.anchorMin = new Vector2(0, 1);
+        rtHeader.anchorMax = new Vector2(1, 1);
+        rtHeader.pivot = new Vector2(0.5f, 1);
+        rtHeader.sizeDelta = new Vector2(0, 56);
+
+        Text titulo = CrearTexto(headerObj.transform, "Titulo", "👥 EXPEDIENTE DE COMANDANTES (BST)", 15, TextAnchor.MiddleLeft, new Color(0.0f, 0.9f, 1f), fuente, true);
         RectTransform rtTitulo = titulo.GetComponent<RectTransform>();
-        rtTitulo.anchorMin = new Vector2(0, 1);
+        rtTitulo.anchorMin = new Vector2(0, 0);
         rtTitulo.anchorMax = new Vector2(1, 1);
-        rtTitulo.pivot = new Vector2(0.5f, 1);
-        rtTitulo.anchoredPosition = new Vector2(0, -15);
-        rtTitulo.sizeDelta = new Vector2(0, 35);
+        rtTitulo.offsetMin = new Vector2(18, 16);
+        rtTitulo.offsetMax = new Vector2(-50, 0);
 
-        Button btnCerrar = CrearBoton(panelRegistro.transform, "BtnCerrar", "✕", new Color(0.75f, 0.25f, 0.25f, 0.95f), fuente);
-        SetRect(btnCerrar.GetComponent<RectTransform>(), 395, -12, 32, 32);
+        Text subtitulo = CrearTexto(headerObj.transform, "Subtitulo", "Binary Search Tree • Indexación y persistencia de perfiles", 10, TextAnchor.MiddleLeft, new Color(0.6f, 0.7f, 0.85f), fuente, false);
+        RectTransform rtSub = subtitulo.GetComponent<RectTransform>();
+        rtSub.anchorMin = new Vector2(0, 0);
+        rtSub.anchorMax = new Vector2(1, 1);
+        rtSub.offsetMin = new Vector2(18, 0);
+        rtSub.offsetMax = new Vector2(-50, -18);
+
+        Button btnCerrar = CrearBoton(headerObj.transform, "BtnCerrar", "✕", new Color(0.70f, 0.18f, 0.18f, 0.95f), fuente);
+        SetRect(btnCerrar.GetComponent<RectTransform>(), 454, -12, 32, 32);
         btnCerrar.onClick.AddListener(AlternarVisibilidadPanel);
 
         panelRegistro.SetActive(abrirPanelAlIniciar);
 
-        float yPos = -60;
+        float yPos = -68;
 
         // Fila Nombre
-        Text lblNombre = CrearTexto(panelRegistro.transform, "LblNombre", "Nombre del Jugador:", 13, TextAnchor.MiddleLeft, Color.white, fuente, false);
-        SetRect(lblNombre.GetComponent<RectTransform>(), 20, yPos, 400, 22);
-        yPos -= 26;
+        Text lblNombre = CrearTexto(panelRegistro.transform, "LblNombre", "👤 Nombre del Comandante:", 12, TextAnchor.MiddleLeft, new Color(0.85f, 0.90f, 0.98f), fuente, true);
+        SetRect(lblNombre.GetComponent<RectTransform>(), 20, yPos, 460, 20);
+        yPos -= 24;
 
-        inputNombre = CrearCampoTexto(panelRegistro.transform, "InputNombre", "Ej: Carlos", fuente);
-        SetRect(inputNombre.GetComponent<RectTransform>(), 20, yPos, 400, 36);
-        yPos -= 45;
+        inputNombre = CrearCampoTexto(panelRegistro.transform, "InputNombre", "Ej: Coronel Reyes", fuente);
+        SetRect(inputNombre.GetComponent<RectTransform>(), 20, yPos, 460, 34);
+        yPos -= 42;
 
-        // Fila ID
-        Text lblId = CrearTexto(panelRegistro.transform, "LblId", "ID del Jugador (Entero positivo):", 13, TextAnchor.MiddleLeft, Color.white, fuente, false);
-        SetRect(lblId.GetComponent<RectTransform>(), 20, yPos, 400, 22);
-        yPos -= 26;
+        // Fila ID y Vida (Horizontal)
+        Text lblId = CrearTexto(panelRegistro.transform, "LblId", "🆔 ID Táctico (Clave BST):", 12, TextAnchor.MiddleLeft, new Color(0.85f, 0.90f, 0.98f), fuente, true);
+        SetRect(lblId.GetComponent<RectTransform>(), 20, yPos, 220, 20);
+
+        Text lblVida = CrearTexto(panelRegistro.transform, "LblVida", "❤️ Vida Inicial (PV):", 12, TextAnchor.MiddleLeft, new Color(0.85f, 0.90f, 0.98f), fuente, true);
+        SetRect(lblVida.GetComponent<RectTransform>(), 260, yPos, 220, 20);
+        yPos -= 24;
 
         inputId = CrearCampoTexto(panelRegistro.transform, "InputId", "Ej: 10", fuente);
         inputId.contentType = InputField.ContentType.IntegerNumber;
-        SetRect(inputId.GetComponent<RectTransform>(), 20, yPos, 400, 36);
-        yPos -= 45;
-
-        // Fila Vida
-        Text lblVida = CrearTexto(panelRegistro.transform, "LblVida", "Vida inicial (Opcional):", 13, TextAnchor.MiddleLeft, Color.white, fuente, false);
-        SetRect(lblVida.GetComponent<RectTransform>(), 20, yPos, 400, 22);
-        yPos -= 26;
+        SetRect(inputId.GetComponent<RectTransform>(), 20, yPos, 220, 34);
 
         inputVida = CrearCampoTexto(panelRegistro.transform, "InputVida", "100", fuente);
         inputVida.contentType = InputField.ContentType.IntegerNumber;
-        SetRect(inputVida.GetComponent<RectTransform>(), 20, yPos, 400, 36);
-        yPos -= 48;
-
-        // Botones de acción principales
-        Button btnInsertar = CrearBoton(panelRegistro.transform, "BtnInsertar", "➕ Insertar en Árbol", new Color(0.18f, 0.65f, 0.35f), fuente);
-        SetRect(btnInsertar.GetComponent<RectTransform>(), 20, yPos, 195, 38);
-        btnInsertar.onClick.AddListener(RegistrarJugador);
-
-        Button btnBuscar = CrearBoton(panelRegistro.transform, "BtnBuscar", "🔍 Buscar por ID", new Color(0.20f, 0.50f, 0.85f), fuente);
-        SetRect(btnBuscar.GetComponent<RectTransform>(), 225, yPos, 195, 38);
-        btnBuscar.onClick.AddListener(BuscarJugador);
-        yPos -= 44;
-
-        Button btnEliminar = CrearBoton(panelRegistro.transform, "BtnEliminar", "🗑️ Eliminar ID", new Color(0.75f, 0.25f, 0.25f), fuente);
-        SetRect(btnEliminar.GetComponent<RectTransform>(), 20, yPos, 195, 34);
-        btnEliminar.onClick.AddListener(EliminarJugador);
-
-        Button btnLimpiar = CrearBoton(panelRegistro.transform, "BtnLimpiar", "🧹 Limpiar Campos", new Color(0.40f, 0.45f, 0.50f), fuente);
-        SetRect(btnLimpiar.GetComponent<RectTransform>(), 225, yPos, 195, 34);
-        btnLimpiar.onClick.AddListener(LimpiarInputsRegistro);
-        yPos -= 44;
-
-        // Mensaje de feedback
-        textoFeedback = CrearTexto(panelRegistro.transform, "TextoFeedback", "", 13, TextAnchor.MiddleCenter, Color.green, fuente, false);
-        SetRect(textoFeedback.GetComponent<RectTransform>(), 20, yPos, 400, 40);
+        SetRect(inputVida.GetComponent<RectTransform>(), 260, yPos, 220, 34);
         yPos -= 46;
 
-        // Visualización del Árbol (In-Orden)
-        Text lblArbol = CrearTexto(panelRegistro.transform, "LblArbol", "Contenido del Árbol (In-Orden):", 13, TextAnchor.MiddleLeft, new Color(0.85f, 0.85f, 0.85f), fuente, true);
-        SetRect(lblArbol.GetComponent<RectTransform>(), 20, yPos, 400, 22);
-        yPos -= 24;
+        // Botones de acción principales (Fila 1)
+        Button btnInsertar = CrearBoton(panelRegistro.transform, "BtnInsertar", "➕ Registrar en BST", new Color(0.10f, 0.52f, 0.32f), fuente);
+        SetRect(btnInsertar.GetComponent<RectTransform>(), 20, yPos, 220, 36);
+        btnInsertar.onClick.AddListener(RegistrarJugador);
 
-        GameObject fondoLista = new GameObject("FondoListaArbol");
-        fondoLista.transform.SetParent(panelRegistro.transform, false);
-        Image imgFondoLista = fondoLista.AddComponent<Image>();
-        imgFondoLista.color = new Color(0.06f, 0.08f, 0.12f, 0.90f);
-        SetRect(fondoLista.GetComponent<RectTransform>(), 20, yPos, 400, 165);
+        Button btnBuscar = CrearBoton(panelRegistro.transform, "BtnBuscar", "🔍 Buscar por ID", new Color(0.12f, 0.42f, 0.68f), fuente);
+        SetRect(btnBuscar.GetComponent<RectTransform>(), 260, yPos, 220, 36);
+        btnBuscar.onClick.AddListener(BuscarJugador);
+        yPos -= 42;
 
-        textoVisualizacionArbol = CrearTexto(fondoLista.transform, "TextoVisualizacionArbol", "El árbol está vacío.", 12, TextAnchor.UpperLeft, new Color(0.9f, 0.9f, 0.9f), fuente, false);
-        RectTransform rtVis = textoVisualizacionArbol.GetComponent<RectTransform>();
-        rtVis.anchorMin = Vector2.zero;
-        rtVis.anchorMax = Vector2.one;
-        rtVis.offsetMin = new Vector2(10, 8);
-        rtVis.offsetMax = new Vector2(-10, -8);
+        // Botones de acción (Fila 2: Eliminar, Limpiar, Asignar al Mando)
+        Button btnEliminar = CrearBoton(panelRegistro.transform, "BtnEliminar", "🗑️ Eliminar ID", new Color(0.68f, 0.18f, 0.18f), fuente);
+        SetRect(btnEliminar.GetComponent<RectTransform>(), 20, yPos, 140, 34);
+        btnEliminar.onClick.AddListener(EliminarJugador);
+
+        Button btnLimpiar = CrearBoton(panelRegistro.transform, "BtnLimpiar", "🧹 Limpiar", new Color(0.24f, 0.30f, 0.40f), fuente);
+        SetRect(btnLimpiar.GetComponent<RectTransform>(), 170, yPos, 110, 34);
+        btnLimpiar.onClick.AddListener(LimpiarInputsRegistro);
+
+        Button btnAsignar = CrearBoton(panelRegistro.transform, "BtnAsignar", "🎯 Asignar al Mando", new Color(0.78f, 0.45f, 0.08f), fuente);
+        SetRect(btnAsignar.GetComponent<RectTransform>(), 290, yPos, 190, 34);
+        btnAsignar.onClick.AddListener(AsignarComandanteAlMando);
+        yPos -= 44;
+
+        // Barra de Feedback
+        GameObject fondoFeedback = new GameObject("FondoFeedback");
+        fondoFeedback.transform.SetParent(panelRegistro.transform, false);
+        Image imgFb = fondoFeedback.AddComponent<Image>();
+        imgFb.color = new Color(0.04f, 0.06f, 0.10f, 0.90f);
+        SetRect(fondoFeedback.GetComponent<RectTransform>(), 20, yPos, 460, 32);
+
+        textoFeedback = CrearTexto(fondoFeedback.transform, "TextoFeedback", "", 12, TextAnchor.MiddleCenter, Color.green, fuente, false);
+        RectTransform rtFb = textoFeedback.GetComponent<RectTransform>();
+        rtFb.anchorMin = Vector2.zero;
+        rtFb.anchorMax = Vector2.one;
+        rtFb.offsetMin = new Vector2(8, 2);
+        rtFb.offsetMax = new Vector2(-8, -2);
+        yPos -= 40;
+
+        // Barra de Recorridos BST (Tabs: In-Orden, Pre-Orden, Post-Orden)
+        Text lblTabs = CrearTexto(panelRegistro.transform, "LblTabs", "Modo de Recorrido BST:", 11, TextAnchor.MiddleLeft, new Color(0.70f, 0.80f, 0.95f), fuente, true);
+        SetRect(lblTabs.GetComponent<RectTransform>(), 20, yPos, 460, 18);
+        yPos -= 22;
+
+        btnTabInOrden = CrearBoton(panelRegistro.transform, "TabInOrden", "🌿 In-Orden", colorTabActivo, fuente);
+        SetRect(btnTabInOrden.GetComponent<RectTransform>(), 20, yPos, 146, 30);
+        btnTabInOrden.onClick.AddListener(() => CambiarModoRecorrido(ModoRecorridoBST.InOrden));
+
+        btnTabPreOrden = CrearBoton(panelRegistro.transform, "TabPreOrden", "🌲 Pre-Orden", colorTabInactivo, fuente);
+        SetRect(btnTabPreOrden.GetComponent<RectTransform>(), 176, yPos, 146, 30);
+        btnTabPreOrden.onClick.AddListener(() => CambiarModoRecorrido(ModoRecorridoBST.PreOrden));
+
+        btnTabPostOrden = CrearBoton(panelRegistro.transform, "TabPostOrden", "🍂 Post-Orden", colorTabInactivo, fuente);
+        SetRect(btnTabPostOrden.GetComponent<RectTransform>(), 332, yPos, 148, 30);
+        btnTabPostOrden.onClick.AddListener(() => CambiarModoRecorrido(ModoRecorridoBST.PostOrden));
+        yPos -= 36;
+
+        // Métricas de Balance del Árbol (Banner Informativo)
+        GameObject fondoMetricas = new GameObject("FondoMetricas");
+        fondoMetricas.transform.SetParent(panelRegistro.transform, false);
+        Image imgMetricas = fondoMetricas.AddComponent<Image>();
+        imgMetricas.color = new Color(0.03f, 0.05f, 0.08f, 0.95f);
+        SetRect(fondoMetricas.GetComponent<RectTransform>(), 20, yPos, 460, 26);
+
+        textoMetricasArbol = CrearTexto(fondoMetricas.transform, "TextoMetricas", "📊 Total: 0 | Raíz BST: Ninguna | Niveles: 0", 11, TextAnchor.MiddleCenter, new Color(0.85f, 0.85f, 0.85f), fuente, false);
+        RectTransform rtMetricas = textoMetricasArbol.GetComponent<RectTransform>();
+        rtMetricas.anchorMin = Vector2.zero;
+        rtMetricas.anchorMax = Vector2.one;
+        rtMetricas.offsetMin = Vector2.zero;
+        rtMetricas.offsetMax = Vector2.zero;
+        yPos -= 32;
+
+        // Contenedor ScrollRect para Visualización del Árbol
+        GameObject scrollObj = new GameObject("ScrollArbolJugadores");
+        scrollObj.transform.SetParent(panelRegistro.transform, false);
+        SetRect(scrollObj.GetComponent<RectTransform>(), 20, yPos, 460, 185);
+
+        Image imgFondoScroll = scrollObj.AddComponent<Image>();
+        imgFondoScroll.color = new Color(0.04f, 0.06f, 0.09f, 0.95f);
+
+        Outline outScroll = scrollObj.AddComponent<Outline>();
+        outScroll.effectColor = new Color(0.15f, 0.25f, 0.35f, 0.6f);
+        outScroll.effectDistance = new Vector2(1, -1);
+
+        ScrollRect scrollRect = scrollObj.AddComponent<ScrollRect>();
+        scrollRect.horizontal = false;
+        scrollRect.vertical = true;
+        scrollRect.scrollSensitivity = 30f;
+
+        // Viewport
+        GameObject viewportObj = new GameObject("Viewport");
+        viewportObj.transform.SetParent(scrollObj.transform, false);
+        RectTransform rtViewport = viewportObj.AddComponent<RectTransform>();
+        rtViewport.anchorMin = Vector2.zero;
+        rtViewport.anchorMax = Vector2.one;
+        rtViewport.offsetMin = new Vector2(4, 4);
+        rtViewport.offsetMax = new Vector2(-16, -4);
+
+        Image imgMask = viewportObj.AddComponent<Image>();
+        imgMask.color = Color.white;
+        Mask mask = viewportObj.AddComponent<Mask>();
+        mask.showMaskGraphic = false;
+
+        // Content
+        GameObject contentObj = new GameObject("Content");
+        contentObj.transform.SetParent(viewportObj.transform, false);
+        RectTransform rtContent = contentObj.AddComponent<RectTransform>();
+        rtContent.anchorMin = new Vector2(0, 1);
+        rtContent.anchorMax = new Vector2(1, 1);
+        rtContent.pivot = new Vector2(0.5f, 1);
+        rtContent.sizeDelta = new Vector2(0, 300);
+
+        VerticalLayoutGroup vlgContent = contentObj.AddComponent<VerticalLayoutGroup>();
+        vlgContent.padding = new RectOffset(10, 10, 8, 8);
+        vlgContent.childControlWidth = true;
+        vlgContent.childControlHeight = true;
+        vlgContent.childForceExpandWidth = true;
+        vlgContent.childForceExpandHeight = false;
+
+        ContentSizeFitter csfContent = contentObj.AddComponent<ContentSizeFitter>();
+        csfContent.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        textoVisualizacionArbol = CrearTexto(contentObj.transform, "TextoVisualizacionArbol", "Cargando árbol BST...", 12, TextAnchor.UpperLeft, new Color(0.92f, 0.92f, 0.92f), fuente, false);
+        textoVisualizacionArbol.supportRichText = true;
+
+        // Scrollbar Vertical
+        GameObject scrollbarObj = new GameObject("ScrollbarVertical");
+        scrollbarObj.transform.SetParent(scrollObj.transform, false);
+        RectTransform rtScrollbar = scrollbarObj.AddComponent<RectTransform>();
+        rtScrollbar.anchorMin = new Vector2(1, 0);
+        rtScrollbar.anchorMax = new Vector2(1, 1);
+        rtScrollbar.pivot = new Vector2(1, 0.5f);
+        rtScrollbar.anchoredPosition = new Vector2(-2, 0);
+        rtScrollbar.sizeDelta = new Vector2(12, -8);
+
+        Image imgSbTrack = scrollbarObj.AddComponent<Image>();
+        imgSbTrack.color = new Color(0.08f, 0.12f, 0.18f, 0.8f);
+
+        Scrollbar scrollbar = scrollbarObj.AddComponent<Scrollbar>();
+        scrollbar.direction = Scrollbar.Direction.BottomToTop;
+
+        GameObject handleObj = new GameObject("Handle");
+        handleObj.transform.SetParent(scrollbarObj.transform, false);
+        RectTransform rtHandle = handleObj.AddComponent<RectTransform>();
+        rtHandle.sizeDelta = Vector2.zero;
+        Image imgHandle = handleObj.AddComponent<Image>();
+        imgHandle.color = new Color(0.0f, 0.8f, 0.95f, 0.85f);
+
+        scrollbar.handleRect = rtHandle;
+        scrollbar.targetGraphic = imgHandle;
+
+        scrollRect.viewport = rtViewport;
+        scrollRect.content = rtContent;
+        scrollRect.verticalScrollbar = scrollbar;
+        scrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHideAndExpandViewport;
     }
 
     private void SetRect(RectTransform rt, float x, float y, float width, float height)
@@ -474,7 +779,11 @@ public class ControladorArbolUI : MonoBehaviour
         GameObject go = new GameObject(nombre);
         go.transform.SetParent(padre, false);
         Image img = go.AddComponent<Image>();
-        img.color = new Color(0.18f, 0.22f, 0.30f, 1f);
+        img.color = new Color(0.11f, 0.15f, 0.22f, 1f);
+
+        Outline outline = go.AddComponent<Outline>();
+        outline.effectColor = new Color(0.2f, 0.35f, 0.5f, 0.5f);
+        outline.effectDistance = new Vector2(1, -1);
 
         InputField input = go.AddComponent<InputField>();
 
@@ -482,30 +791,30 @@ public class ControladorArbolUI : MonoBehaviour
         textObj.transform.SetParent(go.transform, false);
         Text text = textObj.AddComponent<Text>();
         text.font = fuente;
-        text.fontSize = 14;
+        text.fontSize = 13;
         text.color = Color.white;
         text.alignment = TextAnchor.MiddleLeft;
 
         RectTransform rtText = textObj.GetComponent<RectTransform>();
         rtText.anchorMin = Vector2.zero;
         rtText.anchorMax = Vector2.one;
-        rtText.offsetMin = new Vector2(12, 2);
-        rtText.offsetMax = new Vector2(-12, -2);
+        rtText.offsetMin = new Vector2(10, 2);
+        rtText.offsetMax = new Vector2(-10, -2);
 
         GameObject phObj = new GameObject("Placeholder");
         phObj.transform.SetParent(go.transform, false);
         Text ph = phObj.AddComponent<Text>();
         ph.font = fuente;
-        ph.fontSize = 14;
-        ph.color = new Color(0.6f, 0.65f, 0.75f, 0.6f);
+        ph.fontSize = 13;
+        ph.color = new Color(0.55f, 0.65f, 0.78f, 0.5f);
         ph.text = placeholderTexto;
         ph.alignment = TextAnchor.MiddleLeft;
 
         RectTransform rtPh = phObj.GetComponent<RectTransform>();
         rtPh.anchorMin = Vector2.zero;
         rtPh.anchorMax = Vector2.one;
-        rtPh.offsetMin = new Vector2(12, 2);
-        rtPh.offsetMax = new Vector2(-12, -2);
+        rtPh.offsetMin = new Vector2(10, 2);
+        rtPh.offsetMax = new Vector2(-10, -2);
 
         input.textComponent = text;
         input.placeholder = ph;
@@ -523,15 +832,15 @@ public class ControladorArbolUI : MonoBehaviour
         Button btn = go.AddComponent<Button>();
 
         ColorBlock cb = btn.colors;
-        cb.highlightedColor = colorFondo * 1.15f;
-        cb.pressedColor = colorFondo * 0.85f;
+        cb.highlightedColor = colorFondo * 1.25f;
+        cb.pressedColor = colorFondo * 0.80f;
         btn.colors = cb;
 
         GameObject textObj = new GameObject("Text");
         textObj.transform.SetParent(go.transform, false);
         Text text = textObj.AddComponent<Text>();
         text.font = fuente;
-        text.fontSize = 13;
+        text.fontSize = 12;
         text.fontStyle = FontStyle.Bold;
         text.color = Color.white;
         text.alignment = TextAnchor.MiddleCenter;

@@ -257,6 +257,46 @@ public class Arbol
     }
 
     /// <summary>
+    /// Recorrido Pre-Orden (Raíz, Izquierda, Derecha).
+    /// </summary>
+    public List<Jugador> PreOrden()
+    {
+        List<Jugador> lista = new List<Jugador>();
+        PreOrdenRecursivo(root, lista);
+        return lista;
+    }
+
+    private void PreOrdenRecursivo(Nodo actual, List<Jugador> lista)
+    {
+        if (actual != null)
+        {
+            lista.Add(actual.data);
+            PreOrdenRecursivo(actual.left, lista);
+            PreOrdenRecursivo(actual.right, lista);
+        }
+    }
+
+    /// <summary>
+    /// Recorrido Post-Orden (Izquierda, Derecha, Raíz).
+    /// </summary>
+    public List<Jugador> PostOrden()
+    {
+        List<Jugador> lista = new List<Jugador>();
+        PostOrdenRecursivo(root, lista);
+        return lista;
+    }
+
+    private void PostOrdenRecursivo(Nodo actual, List<Jugador> lista)
+    {
+        if (actual != null)
+        {
+            PostOrdenRecursivo(actual.left, lista);
+            PostOrdenRecursivo(actual.right, lista);
+            lista.Add(actual.data);
+        }
+    }
+
+    /// <summary>
     /// Muestra en consola los nombres (compatibilidad con método original)
     /// </summary>
     public void mayor(Nodo node)
@@ -278,6 +318,20 @@ public class Arbol
     {
         if (actual == null) return 0;
         return 1 + ContarRecursivo(actual.left) + ContarRecursivo(actual.right);
+    }
+
+    /// <summary>
+    /// Calcula la altura máxima del árbol (profundidad en niveles).
+    /// </summary>
+    public int Altura()
+    {
+        return AlturaRecursivo(root);
+    }
+
+    private int AlturaRecursivo(Nodo actual)
+    {
+        if (actual == null) return 0;
+        return 1 + Mathf.Max(AlturaRecursivo(actual.left), AlturaRecursivo(actual.right));
     }
 
     public void Limpiar()
