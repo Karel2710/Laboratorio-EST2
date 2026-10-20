@@ -71,6 +71,7 @@ namespace TowerDefenseGameplay
             }
 
             ActualizarHUD();
+            MostrarBannerNotificacion("🛡️ Haz clic en los cuadrantes del mapa para colocar defensas 🏹");
         }
 
         private void OnDestroy()
@@ -220,21 +221,21 @@ namespace TowerDefenseGameplay
             outBarra.effectDistance = new Vector2(0, -2);
 
             HorizontalLayoutGroup hlg = barraTop.AddComponent<HorizontalLayoutGroup>();
-            hlg.padding = new RectOffset(20, 20, 6, 6);
-            hlg.spacing = 16;
+            hlg.padding = new RectOffset(16, 16, 6, 6);
+            hlg.spacing = 10;
             hlg.childControlWidth = false;
             hlg.childControlHeight = true;
             hlg.childForceExpandWidth = false;
 
             // Elementos de la barra
-            txtBaseVida = CrearTextoHUD(barraTop.transform, "TxtBaseVida", 190);
-            txtOleadaInfo = CrearTextoHUD(barraTop.transform, "TxtOleada", 260);
-            txtOro = CrearTextoHUD(barraTop.transform, "TxtOro", 130);
-            txtJugadorXP = CrearTextoHUD(barraTop.transform, "TxtJugadorXP", 210);
-            txtPuntosDAG = CrearTextoHUD(barraTop.transform, "TxtPuntosDAG", 180);
+            txtBaseVida = CrearTextoHUD(barraTop.transform, "TxtBaseVida", 175);
+            txtOleadaInfo = CrearTextoHUD(barraTop.transform, "TxtOleada", 250);
+            txtOro = CrearTextoHUD(barraTop.transform, "TxtOro", 115);
+            txtJugadorXP = CrearTextoHUD(barraTop.transform, "TxtJugadorXP", 185);
+            txtPuntosDAG = CrearTextoHUD(barraTop.transform, "TxtPuntosDAG", 155);
 
             // Botón Iniciar Oleada Ahora
-            btnIniciarOleada = CrearBotonHUD(barraTop.transform, "BtnIniciarOleada", "▶ Iniciar Oleada", new Color(0.2f, 0.65f, 0.35f), 130);
+            btnIniciarOleada = CrearBotonHUD(barraTop.transform, "BtnIniciarOleada", "▶ Iniciar Oleada", new Color(0.2f, 0.65f, 0.35f), 125);
             btnIniciarOleada.onClick.AddListener(() =>
             {
                 if (GameManager.Instance != null)
@@ -244,7 +245,7 @@ namespace TowerDefenseGameplay
             });
 
             // Botón Único de Acceso a la Armería y Árbol de Talentos (DAG)
-            btnHabilidades = CrearBotonHUD(barraTop.transform, "BtnHabilidadesDAG", "⚡ Armería / Mejoras", new Color(0.32f, 0.22f, 0.75f), 150);
+            btnHabilidades = CrearBotonHUD(barraTop.transform, "BtnHabilidadesDAG", "⚡ Armería / Mejoras", new Color(0.32f, 0.22f, 0.75f), 145);
             btnHabilidades.onClick.AddListener(() =>
             {
                 if (ControladorHabilidadesUI.Instance != null)
@@ -254,7 +255,7 @@ namespace TowerDefenseGameplay
             });
 
             // Botón de Acceso a Comandantes (Árbol BST)
-            btnComandantes = CrearBotonHUD(barraTop.transform, "BtnComandantesBST", "👥 Comandantes", new Color(0.12f, 0.45f, 0.65f), 135);
+            btnComandantes = CrearBotonHUD(barraTop.transform, "BtnComandantesBST", "👥 Comandantes", new Color(0.12f, 0.45f, 0.65f), 130);
             btnComandantes.onClick.AddListener(() =>
             {
                 if (ControladorArbolUI.Instance != null)
@@ -263,8 +264,42 @@ namespace TowerDefenseGameplay
                 }
             });
 
+            // Botones de Selección de Dificultad / Nivel (flujo horizontal sin superposición)
+            Button btnNivel1 = CrearBotonHUD(barraTop.transform, "BtnNivel1", "Nivel 1", new Color(0.15f, 0.52f, 0.25f), 75);
+            btnNivel1.onClick.AddListener(() =>
+            {
+                if (EnemySpawner.instance != null)
+                {
+                    EnemySpawner.instance.CargarConfiguracionNivel(0);
+                    if (GameManager.Instance != null)
+                        GameManager.Instance.EmitirNotificacion("🗺️ Nivel 1 cargado");
+                }
+            });
+
+            Button btnNivel2 = CrearBotonHUD(barraTop.transform, "BtnNivel2", "Nivel 2", new Color(0.78f, 0.48f, 0.08f), 75);
+            btnNivel2.onClick.AddListener(() =>
+            {
+                if (EnemySpawner.instance != null)
+                {
+                    EnemySpawner.instance.CargarConfiguracionNivel(1);
+                    if (GameManager.Instance != null)
+                        GameManager.Instance.EmitirNotificacion("🗺️ Nivel 2 cargado");
+                }
+            });
+
+            Button btnNivel3 = CrearBotonHUD(barraTop.transform, "BtnNivel3", "Nivel 3", new Color(0.78f, 0.18f, 0.18f), 75);
+            btnNivel3.onClick.AddListener(() =>
+            {
+                if (EnemySpawner.instance != null)
+                {
+                    EnemySpawner.instance.CargarConfiguracionNivel(2);
+                    if (GameManager.Instance != null)
+                        GameManager.Instance.EmitirNotificacion("🗺️ Nivel 3 cargado");
+                }
+            });
+
             // Botón Habilidad Definitiva Sobrecarga
-            btnSobrecarga = CrearBotonHUD(barraTop.transform, "BtnSobrecarga", "⚡ Sobrecarga", new Color(0.85f, 0.35f, 0.15f), 120);
+            btnSobrecarga = CrearBotonHUD(barraTop.transform, "BtnSobrecarga", "⚡ Sobrecarga", new Color(0.85f, 0.35f, 0.15f), 115);
             btnSobrecarga.onClick.AddListener(() =>
             {
                 if (GameManager.Instance != null)

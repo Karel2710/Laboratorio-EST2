@@ -522,40 +522,7 @@ public class ControladorArbolUI : MonoBehaviour
 
         canvasObj.AddComponent<GraphicRaycaster>();
 
-        // 3. Banner Superior HUD de Nivel e Instrucciones (aportado por compañero de equipo)
-        GameObject panelHud = new GameObject("PanelHUDInfo");
-        panelHud.transform.SetParent(canvasObj.transform, false);
-        Image imgHud = panelHud.AddComponent<Image>();
-        imgHud.color = new Color(0.08f, 0.11f, 0.16f, 0.88f);
-
-        RectTransform rtHud = panelHud.GetComponent<RectTransform>();
-        rtHud.anchorMin = new Vector2(0.5f, 1);
-        rtHud.anchorMax = new Vector2(0.5f, 1);
-        rtHud.pivot = new Vector2(0.5f, 1);
-        rtHud.anchoredPosition = new Vector2(0, -6);
-        rtHud.sizeDelta = new Vector2(760, 44);
-
-        Text txtInstruccion = CrearTexto(panelHud.transform, "TxtInstruccion", "🛡️ Haz clic en los cuadrantes del mapa para colocar defensas 🏹", 12, TextAnchor.MiddleLeft, new Color(0.95f, 0.9f, 0.3f), fuente, true);
-        RectTransform rtTxtInst = txtInstruccion.GetComponent<RectTransform>();
-        rtTxtInst.anchorMin = new Vector2(0, 0);
-        rtTxtInst.anchorMax = new Vector2(0.58f, 1);
-        rtTxtInst.offsetMin = new Vector2(14, 0);
-        rtTxtInst.offsetMax = new Vector2(0, 0);
-
-        // Botones de Nivel en el HUD
-        Button btnNivel1 = CrearBoton(panelHud.transform, "BtnNivel1", "Nivel 1", new Color(0.2f, 0.6f, 0.3f), fuente);
-        SetRect(btnNivel1.GetComponent<RectTransform>(), 450, -6, 90, 32);
-        btnNivel1.onClick.AddListener(() => { if (EnemySpawner.instance != null) EnemySpawner.instance.CargarConfiguracionNivel(0); });
-
-        Button btnNivel2 = CrearBoton(panelHud.transform, "BtnNivel2", "Nivel 2", new Color(0.8f, 0.5f, 0.1f), fuente);
-        SetRect(btnNivel2.GetComponent<RectTransform>(), 550, -6, 90, 32);
-        btnNivel2.onClick.AddListener(() => { if (EnemySpawner.instance != null) EnemySpawner.instance.CargarConfiguracionNivel(1); });
-
-        Button btnNivel3 = CrearBoton(panelHud.transform, "BtnNivel3", "Nivel 3", new Color(0.8f, 0.2f, 0.2f), fuente);
-        SetRect(btnNivel3.GetComponent<RectTransform>(), 650, -6, 90, 32);
-        btnNivel3.onClick.AddListener(() => { if (EnemySpawner.instance != null) EnemySpawner.instance.CargarConfiguracionNivel(2); });
-
-        // 4. Botón flotante para abrir/cerrar el panel (tactical pill)
+        // 3. Botón flotante para abrir/cerrar el panel (tactical pill)
         Button botonToggle = CrearBoton(canvasObj.transform, "BotonTogglePanel", "👥 Mando BST", new Color(0.10f, 0.25f, 0.40f, 0.95f), fuente);
         RectTransform rtToggle = botonToggle.GetComponent<RectTransform>();
         rtToggle.anchorMin = new Vector2(1, 1);
