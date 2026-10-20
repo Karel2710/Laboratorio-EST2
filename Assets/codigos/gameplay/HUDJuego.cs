@@ -271,8 +271,7 @@ namespace TowerDefenseGameplay
                 if (EnemySpawner.instance != null)
                 {
                     EnemySpawner.instance.CargarConfiguracionNivel(0);
-                    if (GameManager.Instance != null)
-                        GameManager.Instance.EmitirNotificacion("🗺️ Nivel 1 cargado");
+                    MostrarBannerNotificacion("🗺️ Nivel 1 cargado");
                 }
             });
 
@@ -282,8 +281,7 @@ namespace TowerDefenseGameplay
                 if (EnemySpawner.instance != null)
                 {
                     EnemySpawner.instance.CargarConfiguracionNivel(1);
-                    if (GameManager.Instance != null)
-                        GameManager.Instance.EmitirNotificacion("🗺️ Nivel 2 cargado");
+                    MostrarBannerNotificacion("🗺️ Nivel 2 cargado");
                 }
             });
 
@@ -293,8 +291,7 @@ namespace TowerDefenseGameplay
                 if (EnemySpawner.instance != null)
                 {
                     EnemySpawner.instance.CargarConfiguracionNivel(2);
-                    if (GameManager.Instance != null)
-                        GameManager.Instance.EmitirNotificacion("🗺️ Nivel 3 cargado");
+                    MostrarBannerNotificacion("🗺️ Nivel 3 cargado");
                 }
             });
 
