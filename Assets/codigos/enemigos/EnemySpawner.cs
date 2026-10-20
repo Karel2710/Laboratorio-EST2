@@ -116,14 +116,26 @@ public class EnemySpawner : MonoBehaviour
     {
         Vector3 spawnPosition = Vector3.zero;
 
-        if (levelManager.main != null && levelManager.main.Start != null)
+        // 1ª prioridad: nodo de inicio del grafo (PathNode marcado como esInicio)
+        if (PathGraph.main != null)
+        {
+            PathNode nodoInicio = PathGraph.main.ObtenerNodoInicio();
+            if (nodoInicio != null)
+            {
+                spawnPosition = nodoInicio.transform.position;
+            }
+        }
+        // 2ª prioridad: startPoint del levelManager
+        else if (levelManager.main != null && levelManager.main.Start != null)
         {
             spawnPosition = levelManager.main.Start.position;
         }
+        // 3ª prioridad: primer punto del path legacy
         else if (levelManager.main != null && levelManager.main.Path != null && levelManager.main.Path.Length > 0 && levelManager.main.Path[0] != null)
         {
             spawnPosition = levelManager.main.Path[0].position;
         }
+        // Si nada existe, spawnea en (0,0,0) — señal de que falta configuración
 
         GameObject nuevoEnemigo = null;
 
@@ -167,12 +179,7 @@ public class EnemySpawner : MonoBehaviour
         enemyMovement movement = nuevoEnemigo.GetComponent<enemyMovement>();
         if (movement != null)
         {
-            // Set speed via field or reflection if needed
-            var speedField = typeof(enemyMovement).GetField("moveSpeed", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
-            if (speedField != null)
-            {
-                speedField.SetValue(movement, configActual.velocidadEnemigoBase);
-            }
+            movement.MoveSpeed = configActual.velocidadEnemigoBase;
         }
     }
 }
