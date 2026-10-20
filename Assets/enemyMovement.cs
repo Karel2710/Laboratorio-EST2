@@ -19,9 +19,8 @@ public class enemyMovement : MonoBehaviour
     private List<PathNode> rutaGrafo = null;
     private int indiceNodoActual = 0;
 
-    // ─── Estado de navegación legacy (arreglo lineal) ─────────────────────────
-    private Transform targetLegacy = null;
-    private int pathIndexLegacy = 0;
+    // ─── Estado de navegación lineal ─────────────────────────────────────────
+    private int pathIndex = 0;
 
     // ─── Modo activo y componentes ───────────────────────────────────────────
     private bool usandoGrafo = false;
@@ -72,49 +71,67 @@ public class enemyMovement : MonoBehaviour
 
     private void Update()
     {
-        if (usandoGrafo)
-            ActualizarMovimientoGrafo();
-        else
-            ActualizarMovimientoLegacy();
+        Transform objActual = ObtenerTransformObjetivo();
+        if (objActual == null)
+        {
+            AvanzarSiguienteObjetivo();
+            return;
+        }
+
+        if (Vector2.Distance(transform.position, objActual.position) <= 0.35f)
+        {
+            AvanzarSiguienteObjetivo();
+        }
     }
 
     private void FixedUpdate()
     {
         if (rb == null) return;
 
-        Vector2 destino = ObtenerPosicionDestino();
-        if (destino == Vector2.zero && !HayDestino()) return;
+        Transform objActual = ObtenerTransformObjetivo();
+        if (objActual == null) return;
 
         float multiplicador = componenteEnemigo != null ? componenteEnemigo.VelocidadEfectiva : 1f;
-        Vector2 dir = (destino - rb.position).normalized;
+        Vector2 dir = ((Vector2)objActual.position - rb.position).normalized;
         rb.linearVelocity = dir * (moveSpeed * multiplicador);
     }
 
     #endregion
 
-    #region Inicialización de Ruta
+    #region Inicialización y Navegación de Ruta
+
+    private levelManager ObtenerLevelManager()
+    {
+        if (levelManager.main != null) return levelManager.main;
+        levelManager lm = FindFirstObjectByType<levelManager>();
+        if (lm != null)
+        {
+            levelManager.main = lm;
+            return lm;
+        }
+        return null;
+    }
 
     private void InicializarRuta()
     {
         if (PathGraph.main != null)
         {
             List<PathNode> ruta = PathGraph.main.ObtenerRutaActual();
-            if (ruta != null && ruta.Count > 0)
+            if (ruta != null && ruta.Count > 1)
             {
                 EstablecerRutaGrafo(ruta);
                 return;
             }
         }
 
-        // Fallback: sistema legacy con arreglo Transform[] de levelManager
+        // Modo lineal estándar usando levelManager
         usandoGrafo = false;
-        pathIndexLegacy = 0;
-        ObtenerSiguienteObjetivoLegacy();
+        pathIndex = 0;
     }
 
     public void ActualizarRuta(List<PathNode> nuevaRuta)
     {
-        if (nuevaRuta == null || nuevaRuta.Count == 0) return;
+        if (nuevaRuta == null || nuevaRuta.Count < 2) return;
         EstablecerRutaGrafo(nuevaRuta);
     }
 
@@ -146,90 +163,43 @@ public class enemyMovement : MonoBehaviour
         return Mathf.Min(indiceMasCercano, rutaGrafo.Count - 1);
     }
 
-    #endregion
-
-    #region Movimiento por Grafo
-
-    private void ActualizarMovimientoGrafo()
+    private Transform ObtenerTransformObjetivo()
     {
-        if (rutaGrafo == null || indiceNodoActual >= rutaGrafo.Count)
+        if (usandoGrafo && rutaGrafo != null && indiceNodoActual < rutaGrafo.Count && rutaGrafo[indiceNodoActual] != null)
         {
-            LlegarALaBase();
-            return;
+            return rutaGrafo[indiceNodoActual].transform;
         }
 
-        PathNode nodoObjetivo = rutaGrafo[indiceNodoActual];
-        if (nodoObjetivo == null)
+        levelManager lm = ObtenerLevelManager();
+        if (lm != null && lm.Path != null && pathIndex < lm.Path.Length)
         {
-            indiceNodoActual++;
-            return;
+            return lm.Path[pathIndex];
         }
 
-        float distancia = Vector2.Distance(transform.position, nodoObjetivo.transform.position);
-        if (distancia <= 0.35f)
-        {
-            indiceNodoActual++;
-        }
+        return null;
     }
 
-    #endregion
-
-    #region Movimiento Legacy
-
-    private void ActualizarMovimientoLegacy()
+    private void AvanzarSiguienteObjetivo()
     {
-        if (targetLegacy == null)
+        if (usandoGrafo && rutaGrafo != null)
         {
-            ObtenerSiguienteObjetivoLegacy();
-            if (targetLegacy == null) return;
-        }
-
-        if (Vector2.Distance(transform.position, targetLegacy.position) <= 0.35f)
-        {
-            pathIndexLegacy++;
-            ObtenerSiguienteObjetivoLegacy();
-        }
-    }
-
-    private void ObtenerSiguienteObjetivoLegacy()
-    {
-        if (levelManager.main != null && levelManager.main.Path != null && levelManager.main.Path.Length > 0)
-        {
-            if (pathIndexLegacy >= 0 && pathIndexLegacy < levelManager.main.Path.Length)
-                targetLegacy = levelManager.main.Path[pathIndexLegacy];
-            else
+            indiceNodoActual++;
+            if (indiceNodoActual >= rutaGrafo.Count)
             {
-                targetLegacy = null;
+                LlegarALaBase();
+            }
+            return;
+        }
+
+        levelManager lm = ObtenerLevelManager();
+        if (lm != null && lm.Path != null)
+        {
+            pathIndex++;
+            if (pathIndex >= lm.Path.Length)
+            {
                 LlegarALaBase();
             }
         }
-    }
-
-    #endregion
-
-    #region Helpers
-
-    private Vector2 ObtenerPosicionDestino()
-    {
-        if (usandoGrafo)
-        {
-            if (rutaGrafo != null && indiceNodoActual < rutaGrafo.Count && rutaGrafo[indiceNodoActual] != null)
-                return rutaGrafo[indiceNodoActual].transform.position;
-        }
-        else
-        {
-            if (targetLegacy != null)
-                return targetLegacy.position;
-        }
-        return Vector2.zero;
-    }
-
-    private bool HayDestino()
-    {
-        if (usandoGrafo)
-            return rutaGrafo != null && indiceNodoActual < rutaGrafo.Count;
-        else
-            return targetLegacy != null;
     }
 
     private void LlegarALaBase()

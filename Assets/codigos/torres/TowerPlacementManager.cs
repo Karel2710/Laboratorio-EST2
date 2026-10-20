@@ -4,25 +4,29 @@ public class TowerPlacementManager : MonoBehaviour
 {
     private void Start()
     {
+        AsegurarRaycaster2D();
         InicializarParcelas();
         AsegurarSpawner();
-        AsegurarRaycaster2D();
     }
 
     /// <summary>
-    /// Asegura que la cámara principal tenga un Physics2DRaycaster para que el EventSystem detecte clics 2D.
+    /// Evita que Physics2DRaycaster interfiera con la detección de clics en la interfaz y en el mapa.
     /// </summary>
     private void AsegurarRaycaster2D()
     {
-        if (Camera.main != null && Camera.main.GetComponent<UnityEngine.EventSystems.Physics2DRaycaster>() == null)
+        if (Camera.main != null)
         {
-            Camera.main.gameObject.AddComponent<UnityEngine.EventSystems.Physics2DRaycaster>();
-            Debug.Log("[TowerPlacementManager] Se añadió Physics2DRaycaster a la cámara principal.");
+            var p2d = Camera.main.GetComponent<UnityEngine.EventSystems.Physics2DRaycaster>();
+            if (p2d != null)
+            {
+                Destroy(p2d);
+                Debug.Log("[TowerPlacementManager] Se retiró Physics2DRaycaster para permitir clics directos sobre el terreno.");
+            }
         }
     }
 
     /// <summary>
-    /// Busca el objeto 'plots' en la escena y adjunta PlotPlacement a cada parcela.
+    /// Busca el objeto 'plots' en la escena y adjunta PlotPlacement a cada parcela de forma complementaria.
     /// </summary>
     public void InicializarParcelas()
     {
@@ -38,26 +42,26 @@ public class TowerPlacementManager : MonoBehaviour
                     contador++;
                 }
             }
-            Debug.Log($"[TowerPlacementManager] Se inicializaron {contador} parcelas para colocar defensas.");
-        }
-        else
-        {
-            // Si no se llama 'plots', buscar por tag o componentes de collider
-            PlotPlacement[] parcelasExistentes = FindObjectsByType<PlotPlacement>(FindObjectsSortMode.None);
-            Debug.Log($"[TowerPlacementManager] Parcelas registradas: {parcelasExistentes.Length}");
+            Debug.Log($"[TowerPlacementManager] Se verificaron {contador} parcelas para colocación de defensas.");
         }
     }
 
     /// <summary>
-    /// Asegura que exista un EnemySpawner activo en la escena.
+    /// Asegura que exista un EnemySpawner únicamente si GameManager no está activo en la escena.
     /// </summary>
     private void AsegurarSpawner()
     {
+        if (TowerDefenseGameplay.GameManager.Instance != null)
+        {
+            // GameManager ya administra el ciclo de oleadas principal del juego
+            return;
+        }
+
         if (EnemySpawner.instance == null && FindFirstObjectByType<EnemySpawner>() == null)
         {
             GameObject spawnerObj = new GameObject("EnemySpawner");
             spawnerObj.AddComponent<EnemySpawner>();
-            Debug.Log("[TowerPlacementManager] EnemySpawner creado dinámicamente en la escena.");
+            Debug.Log("[TowerPlacementManager] EnemySpawner creado dinámicamente como respaldo.");
         }
     }
 }

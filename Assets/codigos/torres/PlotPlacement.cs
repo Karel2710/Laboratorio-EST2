@@ -51,6 +51,13 @@ public class PlotPlacement : MonoBehaviour, IPointerEnterHandler, IPointerExitHa
 
     public void ColocarOQuitarTorre()
     {
+        var plotTorre = GetComponent<TowerDefenseGameplay.PlotTorre>();
+        if (plotTorre != null)
+        {
+            plotTorre.ConstruirTorre();
+            return;
+        }
+
         if (torreActual == null)
         {
             ConstruirTorre();

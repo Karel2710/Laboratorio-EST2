@@ -1,6 +1,8 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using GrafosEST2;
 
 namespace TowerDefenseGameplay
@@ -178,9 +180,8 @@ namespace TowerDefenseGameplay
             }
 #endif
 
-            // 2. Si el cursor está sobre la UI gráfica, no procesar terreno
-            if (UnityEngine.EventSystems.EventSystem.current != null &&
-                UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject())
+            // 2. Si el cursor está sobre la UI gráfica real (botones, modales), no procesar terreno
+            if (EsCursorSobreUI(mouseScreen))
             {
                 if (plotBajoCursor != null)
                 {
@@ -250,6 +251,27 @@ namespace TowerDefenseGameplay
             {
                 plotDetectado.ConstruirTorre();
             }
+        }
+
+        private bool EsCursorSobreUI(Vector2 mouseScreen)
+        {
+            if (EventSystem.current == null) return false;
+
+            PointerEventData ped = new PointerEventData(EventSystem.current)
+            {
+                position = mouseScreen
+            };
+            List<RaycastResult> results = new List<RaycastResult>();
+            EventSystem.current.RaycastAll(ped, results);
+
+            for (int i = 0; i < results.Count; i++)
+            {
+                if (results[i].module is GraphicRaycaster)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private void VincularJugadorActivo()

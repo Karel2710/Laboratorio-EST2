@@ -76,7 +76,14 @@ public class ControladorArbolUI : MonoBehaviour
 
         if (autoGenerarUISiFalta && (panelRegistro == null || inputNombre == null || inputId == null))
         {
-            ConstruirUIAutomaticamente();
+            try
+            {
+                ConstruirUIAutomaticamente();
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[ControladorArbolUI] Error en ConstruirUIAutomaticamente: {ex.Message}\n{ex.StackTrace}");
+            }
         }
     }
 
@@ -711,12 +718,13 @@ public class ControladorArbolUI : MonoBehaviour
         yPos -= 32;
 
         // Contenedor ScrollRect para Visualización del Árbol
-        GameObject scrollObj = new GameObject("ScrollArbolJugadores");
+        GameObject scrollObj = new GameObject("ScrollArbolJugadores", typeof(RectTransform));
         scrollObj.transform.SetParent(panelRegistro.transform, false);
-        SetRect(scrollObj.GetComponent<RectTransform>(), 20, yPos, 460, 185);
 
         Image imgFondoScroll = scrollObj.AddComponent<Image>();
         imgFondoScroll.color = new Color(0.04f, 0.06f, 0.09f, 0.95f);
+
+        SetRect(scrollObj.GetComponent<RectTransform>(), 20, yPos, 460, 185);
 
         Outline outScroll = scrollObj.AddComponent<Outline>();
         outScroll.effectColor = new Color(0.15f, 0.25f, 0.35f, 0.6f);
