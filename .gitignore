@@ -1,25 +1,104 @@
-# Unity generated
+# ─── Unity Generated ─────────────────────────────────────────────────────────
 [Ll]ibrary/
 [Tt]emp/
 [Oo]bj/
 [Bb]uild/
 [Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
 [Mm]emoryCaptures/
-sysinfo/
+[Rr]ecordings/
+sysinfo.txt
 
-# User/IDE
-.vscode/
-.idea/
-*.sln
-*.csproj
+# Asset Store Tools
+/[Aa]ssets/AssetStoreTools*
+
+# Jetbrains Rider plugin
+[Aa]ssets/[Pp]lugins/Editor/JetBrains*
+
+# Addressables
+/[Aa]ssets/[Aa]ddressable[Aa]ssets[Dd]ata/*/*.bin*
+/[Aa]ssets/[Ss]treamingAssets/aa.meta
+/[Aa]ssets/[Ss]treamingAssets/aa/
+
+# ─── Unity File Types ────────────────────────────────────────────────────────
+*.pidb
+*.pidb.meta
+*.unityproj
+*.suo
+*.tmp
 *.user
 *.userprefs
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Unity generated files
-*.unityproj
 *.booproj
 *.svd
+*.pdb
+*.pdb.meta
+*.mdb
+*.mdb.meta
+*.opendb
+*.VC.db
+
+# ─── Builds & Packages ───────────────────────────────────────────────────────
+*.apk
+*.aab
+*.app
+*.exe
+*.x86
+*.x86_64
+ExportedObj/
+*.unitypackage
+crashlytics-build.properties
+
+# ─── Visual Studio / Rider ───────────────────────────────────────────────────
+.vs/
+.idea/
+*.csproj
+*.sln
+*.suo
+*.userosscache
+*.sln.docstates
+
+# ─── VS Code ─────────────────────────────────────────────────────────────────
+.vscode/
+
+# ─── OS — Windows ────────────────────────────────────────────────────────────
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# ─── OS — macOS ──────────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# ─── OS — Linux ──────────────────────────────────────────────────────────────
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+
+# ─── Node / npm ──────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ─── Python (scripts de utilidad) ────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+
+# ─── Misc ────────────────────────────────────────────────────────────────────
+*.bak
+*.orig
+*.log
