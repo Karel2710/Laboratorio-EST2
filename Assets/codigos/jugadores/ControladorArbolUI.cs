@@ -54,7 +54,18 @@ public class ControladorArbolUI : MonoBehaviour
     private class DatosArbolJugadores
     {
         public List<Jugador> listaJugadores = new List<Jugador>();
+        public bool modoAVL = false;
     }
+
+    private bool arbolCargado = false;
+    private ClaseComandante claseSeleccionada = ClaseComandante.Recluta;
+    private Button btnClase;
+    private GameObject panelVista;
+    private RectTransform lienzoVista;
+    private Text textoVistaMetricas;
+    private Text textoBitacora;
+    private Button btnAVL;
+    private int idResaltado = -1;
 
     private string rutaArchivoArbol;
     private Color colorTabActivo = new Color(0.12f, 0.55f, 0.85f, 1f);
@@ -99,18 +110,24 @@ public class ControladorArbolUI : MonoBehaviour
             panelRegistro.SetActive(abrirPanelAlIniciar);
         }
 
-        CargarArbolDesdeDisco();
-        AsegurarSistemasDefensa();
+        AsegurarCargado();
         ActualizarEstilosTabs();
+        ActualizarVisualizacionArbol();
     }
 
-    private void AsegurarSistemasDefensa()
+    private void OnDestroy()
     {
-        if (FindFirstObjectByType<TowerPlacementManager>() == null)
-        {
-            GameObject managerObj = new GameObject("TowerPlacementManager");
-            managerObj.AddComponent<TowerPlacementManager>();
-        }
+        if (Instance == this) Instance = null;
+    }
+
+    /// <summary>Carga el árbol desde disco una sola vez (otros sistemas pueden pedirlo antes de Start).</summary>
+    public void AsegurarCargado()
+    {
+        if (arbolCargado) return;
+        arbolCargado = true;
+        if (string.IsNullOrEmpty(rutaArchivoArbol))
+            rutaArchivoArbol = System.IO.Path.Combine(Application.persistentDataPath, "jugadores_arbol.json");
+        CargarArbolDesdeDisco();
     }
 
     /// <summary>
@@ -154,6 +171,7 @@ public class ControladorArbolUI : MonoBehaviour
         }
 
         Jugador nuevoJugador = new Jugador(vida, id, nombre, 1, 0);
+        nuevoJugador.clase = claseSeleccionada;
         bool insertado = arbolJugadores.Insertar(nuevoJugador);
 
         if (insertado)
@@ -201,7 +219,10 @@ public class ControladorArbolUI : MonoBehaviour
         Jugador encontrado = arbolJugadores.Buscar(idABuscar);
         if (encontrado != null)
         {
-            MostrarMensajeFeedback($"✓ Localizado en BST: {encontrado.nombre} (ID: {encontrado.Id}, Vida: {encontrado.vida})", new Color(0.3f, 0.85f, 1f));
+            int pasos = arbolJugadores.ProfundidadDe(idABuscar);
+            MostrarMensajeFeedback($"✓ Localizado en {pasos} comparación(es): {encontrado.nombre} (ID: {encontrado.Id}, {encontrado.NombreClaseActual})", new Color(0.3f, 0.85f, 1f));
+            idResaltado = idABuscar;
+            RedibujarVistaGrafica();
 
             if (inputNombre != null) inputNombre.text = encontrado.nombre;
             if (inputId != null) inputId.text = encontrado.Id.ToString();
@@ -253,10 +274,9 @@ public class ControladorArbolUI : MonoBehaviour
 
         if (GameManager.Instance != null)
         {
-            GameManager.Instance.jugadorActivo = j;
+            GameManager.Instance.AsignarComandante(j, false);
         }
-
-        if (ControladorHabilidadesUI.Instance != null)
+        else if (ControladorHabilidadesUI.Instance != null)
         {
             ControladorHabilidadesUI.Instance.jugadorActivo = j;
             if (ControladorHabilidadesUI.Instance.sistemaHabilidades != null)
@@ -343,7 +363,9 @@ public class ControladorArbolUI : MonoBehaviour
         try
         {
             DatosArbolJugadores datos = new DatosArbolJugadores();
-            datos.listaJugadores = arbolJugadores.InOrden();
+            // Pre-orden: al reinsertar en ese orden se reconstruye exactamente la misma forma del árbol
+            datos.listaJugadores = arbolJugadores.PreOrden();
+            datos.modoAVL = arbolJugadores.autoBalanceoAVL;
 
             string json = JsonUtility.ToJson(datos, true);
             System.IO.File.WriteAllText(rutaArchivoArbol, json);
@@ -370,8 +392,11 @@ public class ControladorArbolUI : MonoBehaviour
                 if (datos != null && datos.listaJugadores != null && datos.listaJugadores.Count > 0)
                 {
                     arbolJugadores.Limpiar();
+                    arbolJugadores.autoBalanceoAVL = datos.modoAVL;
                     foreach (Jugador j in datos.listaJugadores)
                     {
+                        if (j == null) continue;
+                        if (j.habilidadesDesbloqueadas == null) j.habilidadesDesbloqueadas = new List<string>();
                         arbolJugadores.Insertar(j);
                     }
                     MostrarMensajeFeedback($"✓ BST cargado ({datos.listaJugadores.Count} comandantes en memoria).", new Color(0.2f, 0.9f, 0.4f));
@@ -422,8 +447,11 @@ public class ControladorArbolUI : MonoBehaviour
 
         if (textoMetricasArbol != null)
         {
-            textoMetricasArbol.text = $"📊 <b>Total:</b> <color=#00e5ff>{total}</color>  |  <b>Raíz BST:</b> <color=#ffd700>ID {raizId}</color>  |  <b>Niveles:</b> <color=#44ff88>{altura}</color>";
+            string tipoArbol = arbolJugadores.EsAVL() ? "<color=#44ff88>AVL ✓</color>" : "<color=#ff9966>desbalanceado</color>";
+            textoMetricasArbol.text = $"📊 <b>Total:</b> <color=#00e5ff>{total}</color> | <b>Raíz:</b> <color=#ffd700>ID {raizId}</color> | <b>Altura:</b> <color=#44ff88>{altura}</color> | <b>FE raíz:</b> {arbolJugadores.FactorEquilibrio(arbolJugadores.root)} | {tipoArbol}";
         }
+
+        RedibujarVistaGrafica();
 
         if (textoVisualizacionArbol == null) return;
 
@@ -443,10 +471,12 @@ public class ControladorArbolUI : MonoBehaviour
         {
             Jugador j = jugadores[i];
             bool esActivo = comandanteActivo != null && comandanteActivo.Id == j.Id;
-            string tagActivo = esActivo ? "  <color=#44ff88><b>[★ EN MANDO TÁCTICO]</b></color>" : "";
+            bool esApoyo = GameManager.Instance != null && GameManager.Instance.jugadorApoyo != null && GameManager.Instance.jugadorApoyo.Id == j.Id;
+            string tagActivo = esActivo ? "  <color=#44ff88><b>[★ EN MANDO TÁCTICO]</b></color>" : (esApoyo ? "  <color=#44eeff><b>[🤝 APOYO]</b></color>" : "");
             string numColor = esActivo ? "#44ff88" : "#00e5ff";
 
             sb.AppendLine($"<color={numColor}><b>#{i + 1:00}</b></color> <b>{j.nombre}</b> (ID: <color=#ffd700><b>{j.Id}</b></color>){tagActivo}");
+            sb.AppendLine($"     <color=#c4b5fd>🎖 {j.NombreClaseActual}</color>  |  <color=#94a3b8>🏆 Mejor:</color> {j.mejorPuntaje} pts  |  <color=#94a3b8>Partidas:</color> {j.partidasJugadas}");
             sb.AppendLine($"     <color=#94a3b8>❤️ Vida:</color> {j.vida} PV  |  <color=#94a3b8>⭐ Nivel:</color> {j.nivel}  |  <color=#94a3b8>💎 Pts DAG:</color> {j.puntosHabilidad}  |  <color=#94a3b8>💰 Oro:</color> {j.oro}");
             sb.AppendLine();
         }
@@ -531,6 +561,8 @@ public class ControladorArbolUI : MonoBehaviour
         rtToggle.anchoredPosition = new Vector2(-20, -18);
         rtToggle.sizeDelta = new Vector2(145, 40);
         botonToggle.onClick.AddListener(AlternarVisibilidadPanel);
+        // El HUD ya ofrece el botón "👥 Comandantes": el flotante se oculta para no tapar la barra superior
+        botonToggle.gameObject.SetActive(false);
 
         Outline outToggle = botonToggle.gameObject.AddComponent<Outline>();
         outToggle.effectColor = new Color(0.0f, 0.9f, 1f, 0.45f);
@@ -550,8 +582,8 @@ public class ControladorArbolUI : MonoBehaviour
         rtPanel.anchorMin = new Vector2(0, 1);
         rtPanel.anchorMax = new Vector2(0, 1);
         rtPanel.pivot = new Vector2(0, 1);
-        rtPanel.anchoredPosition = new Vector2(25, -20);
-        rtPanel.sizeDelta = new Vector2(500, 725);
+        rtPanel.anchoredPosition = new Vector2(20, -92);
+        rtPanel.sizeDelta = new Vector2(500, 770);
 
         // 6. Encabezado Táctico
         GameObject headerObj = new GameObject("HeaderBST");
@@ -634,6 +666,20 @@ public class ControladorArbolUI : MonoBehaviour
         Button btnAsignar = CrearBoton(panelRegistro.transform, "BtnAsignar", "🎯 Asignar al Mando", new Color(0.78f, 0.45f, 0.08f), fuente);
         SetRect(btnAsignar.GetComponent<RectTransform>(), 290, yPos, 190, 34);
         btnAsignar.onClick.AddListener(AsignarComandanteAlMando);
+        yPos -= 40;
+
+        // Fila 3: Especialización, Comandante de Apoyo y Vista Gráfica / AVL
+        btnClase = CrearBoton(panelRegistro.transform, "BtnClase", "🎖 Clase: Recluta", new Color(0.36f, 0.25f, 0.62f), fuente);
+        SetRect(btnClase.GetComponent<RectTransform>(), 20, yPos, 170, 34);
+        btnClase.onClick.AddListener(CiclarClase);
+
+        Button btnApoyo = CrearBoton(panelRegistro.transform, "BtnApoyo", "🤝 Asignar Apoyo", new Color(0.08f, 0.5f, 0.6f), fuente);
+        SetRect(btnApoyo.GetComponent<RectTransform>(), 198, yPos, 130, 34);
+        btnApoyo.onClick.AddListener(AsignarComandanteDeApoyo);
+
+        Button btnVista = CrearBoton(panelRegistro.transform, "BtnVista", "🌳 Vista / AVL", new Color(0.15f, 0.5f, 0.3f), fuente);
+        SetRect(btnVista.GetComponent<RectTransform>(), 336, yPos, 144, 34);
+        btnVista.onClick.AddListener(AlternarVistaGrafica);
         yPos -= 44;
 
         // Barra de Feedback
@@ -769,6 +815,284 @@ public class ControladorArbolUI : MonoBehaviour
         scrollRect.verticalScrollbar = scrollbar;
         scrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHideAndExpandViewport;
     }
+
+    #endregion
+
+    #region Clases de Comandante, Escuadrón, Vista Gráfica y Balanceo AVL
+
+    /// <summary>
+    /// Cicla la especialización. Si el ID escrito ya existe en el árbol se cambia la clase de ese
+    /// comandante; si no, la clase se aplicará al próximo comandante registrado.
+    /// </summary>
+    public void CiclarClase()
+    {
+        int n = System.Enum.GetValues(typeof(ClaseComandante)).Length;
+        claseSeleccionada = (ClaseComandante)(((int)claseSeleccionada + 1) % n);
+        if (btnClase != null) btnClase.GetComponentInChildren<Text>().text = "🎖 Clase: " + Jugador.NombreClase(claseSeleccionada);
+
+        Jugador existente = null;
+        if (inputId != null && int.TryParse(inputId.text.Trim(), out int id)) existente = arbolJugadores.Buscar(id);
+
+        if (existente != null)
+        {
+            existente.clase = claseSeleccionada;
+            GuardarArbolEnDisco();
+            if (GameManager.Instance != null)
+            {
+                if (GameManager.Instance.jugadorActivo == existente) GameManager.Instance.AsignarComandante(existente, false);
+                else if (RedTorresMST.Instance != null) RedTorresMST.Instance.Recalcular();
+            }
+            MostrarMensajeFeedback($"🎖 {existente.nombre} ahora es {Jugador.NombreClase(claseSeleccionada)}: {Jugador.DescripcionClase(claseSeleccionada)}", new Color(0.8f, 0.7f, 1f));
+            ActualizarVisualizacionArbol();
+        }
+        else
+        {
+            MostrarMensajeFeedback($"🎖 {Jugador.NombreClase(claseSeleccionada)}: {Jugador.DescripcionClase(claseSeleccionada)}", new Color(0.8f, 0.7f, 1f));
+        }
+    }
+
+    public void AsignarComandanteDeApoyo()
+    {
+        string textoId = inputId != null && !string.IsNullOrEmpty(inputId.text.Trim()) ? inputId.text.Trim()
+            : (inputBuscarId != null ? inputBuscarId.text.Trim() : string.Empty);
+
+        if (!int.TryParse(textoId, out int id))
+        {
+            MostrarMensajeFeedback("⚠️ Escriba el ID del comandante que será el Apoyo del escuadrón.", new Color(1f, 0.75f, 0.2f));
+            return;
+        }
+
+        Jugador j = arbolJugadores.Buscar(id);
+        if (j == null)
+        {
+            MostrarMensajeFeedback($"✕ No se encontró ningún comandante con ID: {id}.", new Color(1f, 0.35f, 0.35f));
+            return;
+        }
+        if (GameManager.Instance == null) return;
+        if (GameManager.Instance.jugadorActivo != null && GameManager.Instance.jugadorActivo.Id == id)
+        {
+            MostrarMensajeFeedback("⚠️ Ese comandante ya es el Principal. Elija otro como Apoyo.", new Color(1f, 0.75f, 0.2f));
+            return;
+        }
+
+        GameManager.Instance.AsignarComandante(j, true);
+        MostrarMensajeFeedback($"🤝 '{j.nombre}' ({j.NombreClaseActual}) es ahora el Comandante de Apoyo.", new Color(0.3f, 0.9f, 1f));
+        ActualizarVisualizacionArbol();
+    }
+
+    public void AlternarVistaGrafica()
+    {
+        if (panelVista == null) ConstruirVistaGrafica();
+        panelVista.SetActive(!panelVista.activeSelf);
+        if (panelVista.activeSelf) RedibujarVistaGrafica();
+    }
+
+    private void ConstruirVistaGrafica()
+    {
+        Transform canvas = panelRegistro.transform.parent;
+        RectTransform rt = UIFabrica.CrearPanel(canvas, "PanelVistaArbol", Paleta.FondoPanel, new Color(0.2f, 0.95f, 0.55f, 0.6f));
+        UIFabrica.Colocar(rt, 535, -92, 980, 770);
+        panelVista = rt.gameObject;
+        UIFabrica.CrearEncabezado(rt, "🌳 VISOR JERÁRQUICO DEL ÁRBOL — BST vs AVL", new Color(0.4f, 1f, 0.65f), () => panelVista.SetActive(false));
+
+        btnAVL = UIFabrica.CrearBoton(rt, "BtnAVL", "", new Color(0.2f, 0.3f, 0.4f), 13);
+        UIFabrica.Colocar(btnAVL, 16, -56, 230, 36);
+        btnAVL.onClick.AddListener(() =>
+        {
+            arbolJugadores.autoBalanceoAVL = !arbolJugadores.autoBalanceoAVL;
+            GuardarArbolEnDisco();
+            MostrarMensajeFeedback(arbolJugadores.autoBalanceoAVL
+                ? "⚖️ Auto-balanceo AVL ACTIVADO: cada inserción/eliminación rota el árbol si |FE| > 1."
+                : "⚖️ Auto-balanceo desactivado: el árbol se comporta como BST clásico.", new Color(0.4f, 1f, 0.65f));
+            ActualizarVisualizacionArbol();
+        });
+
+        Button btnBalancear = UIFabrica.CrearBoton(rt, "BtnBalancear", "↻ Balancear ahora (rotaciones AVL)", new Color(0.12f, 0.5f, 0.35f), 13);
+        UIFabrica.Colocar(btnBalancear, 254, -56, 270, 36);
+        btnBalancear.onClick.AddListener(() =>
+        {
+            int alturaAntes = arbolJugadores.Altura();
+            int rot = arbolJugadores.BalancearComoAVL();
+            GuardarArbolEnDisco();
+            MostrarMensajeFeedback($"↻ Árbol balanceado con {rot} rotación(es): altura {alturaAntes} → {arbolJugadores.Altura()}.", new Color(0.4f, 1f, 0.65f));
+            ActualizarVisualizacionArbol();
+        });
+
+        Button btnDemo = UIFabrica.CrearBoton(rt, "BtnDemo", "🧪 Insertar 7 cadetes en orden", new Color(0.5f, 0.38f, 0.12f), 13);
+        UIFabrica.Colocar(btnDemo, 532, -56, 240, 36);
+        btnDemo.onClick.AddListener(InsertarCadetesDemo);
+
+        Button btnQuitar = UIFabrica.CrearBoton(rt, "BtnQuitarDemo", "🗑 Quitar cadetes", new Color(0.5f, 0.2f, 0.2f), 13);
+        UIFabrica.Colocar(btnQuitar, 780, -56, 184, 36);
+        btnQuitar.onClick.AddListener(QuitarCadetesDemo);
+
+        textoVistaMetricas = UIFabrica.CrearTexto(rt, "Metricas", "", 13, TextAnchor.MiddleLeft, new Color(0.9f, 0.95f, 1f));
+        UIFabrica.Colocar(textoVistaMetricas, 18, -98, 946, 44);
+
+        RectTransform fondo = UIFabrica.CrearPanel(rt, "Lienzo", new Color(0.03f, 0.05f, 0.08f, 1f), new Color(0.15f, 0.3f, 0.4f, 0.6f));
+        UIFabrica.Colocar(fondo, 16, -146, 948, 480);
+        fondo.gameObject.AddComponent<RectMask2D>();
+        lienzoVista = fondo;
+
+        Text leyenda = UIFabrica.CrearTexto(rt, "Leyenda",
+            "<color=#ffd700>● Raíz</color>   <color=#44ff88>● En mando</color>   <color=#44eeff>● Apoyo</color>   <color=#ff6666>● |FE| > 1 (desbalanceado)</color>   <color=#ffffff>● Resultado de búsqueda</color>   —   FE = altura(izq) − altura(der)",
+            12, TextAnchor.MiddleLeft, new Color(0.7f, 0.78f, 0.88f));
+        UIFabrica.Colocar(leyenda, 18, -630, 946, 22);
+
+        RectTransform fondoBit = UIFabrica.CrearPanel(rt, "FondoBitacora", Paleta.FondoOscuro);
+        UIFabrica.Colocar(fondoBit, 16, -656, 948, 100);
+        textoBitacora = UIFabrica.CrearTexto(fondoBit, "Bitacora", "", 12, TextAnchor.UpperLeft, new Color(0.75f, 0.95f, 0.8f));
+        UIFabrica.Estirar(textoBitacora, 10, 6, 10, 6);
+
+        panelVista.SetActive(false);
+    }
+
+    private void InsertarCadetesDemo()
+    {
+        int maxId = 0;
+        foreach (Jugador j in arbolJugadores.InOrden()) maxId = Mathf.Max(maxId, j.Id);
+        int rotAntes = arbolJugadores.rotacionesRealizadas;
+        for (int i = 1; i <= 7; i++)
+        {
+            arbolJugadores.Insertar(new Jugador(100, maxId + i, "Cadete_" + (maxId + i), 1, 0));
+        }
+        GuardarArbolEnDisco();
+        int rot = arbolJugadores.rotacionesRealizadas - rotAntes;
+        MostrarMensajeFeedback(arbolJugadores.autoBalanceoAVL
+            ? $"🧪 7 IDs consecutivos insertados con AVL: {rot} rotación(es) mantuvieron el árbol balanceado."
+            : "🧪 7 IDs consecutivos insertados en BST: el árbol degenera en una lista (altura máxima).", new Color(1f, 0.85f, 0.4f));
+        ActualizarVisualizacionArbol();
+    }
+
+    private void QuitarCadetesDemo()
+    {
+        int quitados = 0;
+        foreach (Jugador j in arbolJugadores.InOrden())
+        {
+            if (j.nombre != null && j.nombre.StartsWith("Cadete_"))
+            {
+                bool enUso = GameManager.Instance != null && (GameManager.Instance.jugadorActivo == j || GameManager.Instance.jugadorApoyo == j);
+                if (!enUso && arbolJugadores.Eliminar(j.Id)) quitados++;
+            }
+        }
+        GuardarArbolEnDisco();
+        MostrarMensajeFeedback($"🗑 {quitados} cadete(s) de demostración retirados del árbol.", new Color(0.3f, 0.85f, 1f));
+        ActualizarVisualizacionArbol();
+    }
+
+    /// <summary>
+    /// Dibuja el árbol como círculos unidos por líneas. X = posición in-orden, Y = profundidad.
+    /// </summary>
+    private void RedibujarVistaGrafica()
+    {
+        if (panelVista == null || !panelVista.activeSelf || lienzoVista == null) return;
+
+        for (int i = lienzoVista.childCount - 1; i >= 0; i--) Destroy(lienzoVista.GetChild(i).gameObject);
+
+        if (btnAVL != null)
+        {
+            btnAVL.GetComponentInChildren<Text>().text = arbolJugadores.autoBalanceoAVL ? "⚖️ Auto-Balanceo AVL: ACTIVADO" : "⚖️ Auto-Balanceo AVL: DESACTIVADO";
+            btnAVL.GetComponent<Image>().color = arbolJugadores.autoBalanceoAVL ? new Color(0.1f, 0.6f, 0.4f) : new Color(0.25f, 0.3f, 0.4f);
+        }
+
+        int total = arbolJugadores.Contar();
+        int altura = arbolJugadores.Altura();
+        int alturaOptima = total > 0 ? Mathf.CeilToInt(Mathf.Log(total + 1, 2f)) : 0;
+        if (textoVistaMetricas != null)
+        {
+            string estado = arbolJugadores.EsAVL() ? "<color=#44ff88><b>Balanceado (AVL)</b></color>" : "<color=#ff6666><b>Desbalanceado</b></color>";
+            textoVistaMetricas.text =
+                $"Nodos: <b>{total}</b>   Altura actual: <b>{altura}</b>   Altura mínima posible: <b>{alturaOptima}</b>   Estado: {estado}   Rotaciones acumuladas: <b>{arbolJugadores.rotacionesRealizadas}</b>\n" +
+                $"<color=#94a3b8>Búsqueda en el peor caso: {altura} comparación(es). En un AVL es O(log n); en un BST degenerado es O(n).</color>";
+        }
+        if (textoBitacora != null)
+        {
+            StringBuilder sb = new StringBuilder("<b>Bitácora de rotaciones:</b>\n");
+            List<string> bit = arbolJugadores.bitacoraRotaciones;
+            if (bit.Count == 0) sb.Append("<color=#94a3b8>Sin rotaciones todavía. Active el auto-balanceo o pulse \"Balancear ahora\".</color>");
+            for (int i = Mathf.Max(0, bit.Count - 5); i < bit.Count; i++) sb.Append("• ").Append(bit[i]).Append("\n");
+            textoBitacora.text = sb.ToString();
+        }
+
+        if (arbolJugadores.root == null)
+        {
+            Text vacio = UIFabrica.CrearTexto(lienzoVista, "Vacio", "El árbol está vacío. Registre un comandante.", 16, TextAnchor.MiddleCenter, new Color(0.6f, 0.68f, 0.78f));
+            UIFabrica.Estirar(vacio);
+            return;
+        }
+
+        float ancho = 948f, alto = 480f;
+        float radio = total > 24 ? 15f : (total > 12 ? 20f : 26f);
+        float pasoX = total > 1 ? (ancho - 2f * (radio + 14f)) / (total - 1) : 0f;
+        float pasoY = altura > 1 ? Mathf.Min(86f, (alto - 2f * (radio + 22f)) / (altura - 1)) : 0f;
+
+        int contador = 0;
+        Dictionary<Nodo, Vector2> posiciones = new Dictionary<Nodo, Vector2>();
+        CalcularPosiciones(arbolJugadores.root, 0, ref contador, posiciones, radio + 14f, alto - radio - 22f, pasoX, pasoY, total == 1 ? ancho * 0.5f : -1f);
+
+        // Primero las líneas (quedan detrás de los nodos)
+        foreach (KeyValuePair<Nodo, Vector2> kv in posiciones)
+        {
+            if (kv.Key.left != null) UIFabrica.CrearLineaUI(lienzoVista, kv.Value, posiciones[kv.Key.left], new Color(0.35f, 0.75f, 1f, 0.8f), 2.5f);
+            if (kv.Key.right != null) UIFabrica.CrearLineaUI(lienzoVista, kv.Value, posiciones[kv.Key.right], new Color(1f, 0.7f, 0.35f, 0.8f), 2.5f);
+        }
+
+        Jugador activo = GameManager.Instance != null ? GameManager.Instance.jugadorActivo : null;
+        Jugador apoyo = GameManager.Instance != null ? GameManager.Instance.jugadorApoyo : null;
+
+        foreach (KeyValuePair<Nodo, Vector2> kv in posiciones)
+        {
+            Nodo n = kv.Key;
+            int fe = arbolJugadores.FactorEquilibrio(n);
+            Color color = new Color(0.15f, 0.4f, 0.65f);
+            if (n == arbolJugadores.root) color = new Color(0.75f, 0.58f, 0.08f);
+            if (apoyo != null && apoyo.Id == n.data.Id) color = new Color(0.1f, 0.6f, 0.7f);
+            if (activo != null && activo.Id == n.data.Id) color = new Color(0.12f, 0.62f, 0.3f);
+            if (Mathf.Abs(fe) > 1) color = new Color(0.75f, 0.2f, 0.2f);
+
+            Image bordeImg = UIFabrica.CrearImagen(lienzoVista, "Borde", GraficosProc.Circulo, n.data.Id == idResaltado ? Color.white : new Color(0.02f, 0.03f, 0.05f));
+            RectTransform rb = bordeImg.rectTransform;
+            rb.anchorMin = rb.anchorMax = Vector2.zero;
+            rb.pivot = new Vector2(0.5f, 0.5f);
+            rb.anchoredPosition = kv.Value;
+            rb.sizeDelta = Vector2.one * (radio * 2f + (n.data.Id == idResaltado ? 10f : 4f));
+
+            Image circulo = UIFabrica.CrearImagen(lienzoVista, "Nodo", GraficosProc.Circulo, color);
+            RectTransform rc = circulo.rectTransform;
+            rc.anchorMin = rc.anchorMax = Vector2.zero;
+            rc.pivot = new Vector2(0.5f, 0.5f);
+            rc.anchoredPosition = kv.Value;
+            rc.sizeDelta = Vector2.one * radio * 2f;
+
+            Text id = UIFabrica.CrearTexto(circulo.transform, "Id", n.data.Id.ToString(), radio > 20f ? 15 : 11, TextAnchor.MiddleCenter, Color.white, true);
+            UIFabrica.Estirar(id);
+
+            string nombre = n.data.nombre ?? "";
+            if (nombre.Length > 11) nombre = nombre.Substring(0, 10) + "…";
+            string rol = n == arbolJugadores.root ? "Raíz" : "";
+            Text etiqueta = UIFabrica.CrearTexto(lienzoVista, "Etiqueta", $"{nombre}\n<color=#ffe08a>FE {(fe > 0 ? "+" : "")}{fe}</color> {rol}", 10, TextAnchor.UpperCenter, new Color(0.85f, 0.9f, 0.97f));
+            RectTransform re = etiqueta.rectTransform;
+            re.anchorMin = re.anchorMax = Vector2.zero;
+            re.pivot = new Vector2(0.5f, 1f);
+            re.anchoredPosition = kv.Value + new Vector2(0, -radio - 1f);
+            re.sizeDelta = new Vector2(96, 28);
+        }
+    }
+
+    private void CalcularPosiciones(Nodo n, int profundidad, ref int contador, Dictionary<Nodo, Vector2> pos,
+        float margenX, float yTope, float pasoX, float pasoY, float xUnico)
+    {
+        if (n == null) return;
+        CalcularPosiciones(n.left, profundidad + 1, ref contador, pos, margenX, yTope, pasoX, pasoY, xUnico);
+        float x = xUnico >= 0f ? xUnico : margenX + contador * pasoX;
+        pos[n] = new Vector2(x, yTope - profundidad * pasoY);
+        contador++;
+        CalcularPosiciones(n.right, profundidad + 1, ref contador, pos, margenX, yTope, pasoX, pasoY, xUnico);
+    }
+
+    #endregion
+
+    #region Utilidades de UI
 
     private void SetRect(RectTransform rt, float x, float y, float width, float height)
     {

@@ -1,208 +1,112 @@
-﻿using UnityEngine;
-using UnityEngine.EventSystems;
+using System.Collections.Generic;
+using UnityEngine;
+using GrafosEST2;
 
 namespace TowerDefenseGameplay
 {
     /// <summary>
-    /// Gestiona las casillas de terreno (Plots) donde el jugador puede colocar torres de defensa.
-    /// Soporta interacción mediante New Input System, Legacy Input y EventSystems.
+    /// Casilla de terreno donde se construyen torres.
+    /// La interacción (hover, clic) la centraliza GameManager para evitar entradas duplicadas.
     /// </summary>
-    public class PlotTorre : MonoBehaviour, IPointerClickHandler, IPointerEnterHandler, IPointerExitHandler
+    public class PlotTorre : MonoBehaviour
     {
+        public static readonly List<PlotTorre> Todos = new List<PlotTorre>();
+
+        public int indice = -1;
         public int costoTorre = 50;
         public Torre torreInstanciada = null;
+        public bool deshabilitado = false;
 
         private SpriteRenderer spriteRenderer;
-        private Color colorOriginal;
-        private Color colorHover = new Color(0.4f, 0.95f, 0.5f, 0.9f);
-        private Color colorHoverInvalido = new Color(0.95f, 0.3f, 0.3f, 0.9f);
+        private bool resaltado = false;
+
+        private static readonly Color colorLibre = new Color(0.45f, 0.85f, 1f, 0.13f);
+        private static readonly Color colorOcupado = new Color(0.45f, 0.85f, 1f, 0.05f);
 
         public bool TieneTorre => torreInstanciada != null;
 
         private void Awake()
         {
             spriteRenderer = GetComponent<SpriteRenderer>();
-            if (spriteRenderer != null)
-            {
-                colorOriginal = spriteRenderer.color;
-            }
 
-            // Asegurar que todos los Collider2D sean Trigger para no bloquear jamás a los enemigos
+            // Regla anti-atasco: todo Collider2D de casilla es trigger (jamás bloquea a los enemigos)
             Collider2D[] cols = GetComponentsInChildren<Collider2D>(true);
-            if (cols == null || cols.Length == 0)
-            {
-                BoxCollider2D box = gameObject.AddComponent<BoxCollider2D>();
-                box.size = new Vector2(0.9f, 0.9f);
-                box.isTrigger = true;
-            }
-            else
-            {
-                for (int i = 0; i < cols.Length; i++)
-                {
-                    cols[i].isTrigger = true;
-                }
-            }
+            for (int i = 0; i < cols.Length; i++) cols[i].isTrigger = true;
+
+            RestaurarColor();
         }
 
-        private void Start()
+        private void OnEnable()
         {
-            // Reasegurar trigger en Start en caso de que Unity cargue la escena con valores serializados previos
-            foreach (var c in GetComponentsInChildren<Collider2D>(true))
-            {
-                c.isTrigger = true;
-            }
+            if (!Todos.Contains(this)) Todos.Add(this);
         }
 
-        public void ResaltarHover()
+        private void OnDisable()
         {
-            if (spriteRenderer == null) spriteRenderer = GetComponent<SpriteRenderer>();
+            Todos.Remove(this);
+        }
+
+        public void ResaltarHover(bool valido)
+        {
             if (spriteRenderer == null) return;
+            resaltado = true;
+            Color c = valido ? Paleta.Positivo : Paleta.Negativo;
+            c.a = 0.5f;
+            spriteRenderer.color = c;
+        }
 
-            if (TieneTorre)
-            {
-                spriteRenderer.color = colorHoverInvalido;
-            }
-            else
-            {
-                TipoTorre tipo = GameManager.Instance != null ? GameManager.Instance.tipoTorreAConstruir : TipoTorre.Basica;
-                int costo = GameManager.Instance != null ? GameManager.Instance.ObtenerCostoTorre(tipo) : costoTorre;
-                bool puedePagar = GameManager.Instance != null && GameManager.Instance.OroActual >= costo;
-                spriteRenderer.color = puedePagar ? colorHover : colorHoverInvalido;
-            }
+        public void ResaltarSeleccion()
+        {
+            if (spriteRenderer == null) return;
+            resaltado = true;
+            Color c = Paleta.Dorado;
+            c.a = 0.45f;
+            spriteRenderer.color = c;
         }
 
         public void RestaurarColor()
         {
-            if (spriteRenderer == null) spriteRenderer = GetComponent<SpriteRenderer>();
-            if (spriteRenderer != null)
-            {
-                spriteRenderer.color = colorOriginal;
-            }
+            resaltado = false;
+            if (spriteRenderer != null) spriteRenderer.color = TieneTorre ? colorOcupado : colorLibre;
         }
 
-        #region Eventos de Ratón / Legacy Input
+        public bool EstaResaltado => resaltado;
 
-        private void OnMouseEnter()
+        /// <summary>
+        /// Instancia una torre en la casilla. No cobra: el pago lo valida GameManager.
+        /// </summary>
+        public Torre ColocarTorre(TipoTorre tipo, int inversion)
         {
-            ResaltarHover();
-        }
+            if (TieneTorre || deshabilitado) return null;
 
-        private void OnMouseExit()
-        {
-            RestaurarColor();
-        }
-
-        private void OnMouseDown()
-        {
-            ConstruirTorre();
-        }
-
-        #endregion
-
-        #region Eventos de EventSystem / New Input System
-
-        public void OnPointerEnter(PointerEventData eventData)
-        {
-            ResaltarHover();
-        }
-
-        public void OnPointerExit(PointerEventData eventData)
-        {
-            RestaurarColor();
-        }
-
-        public void OnPointerClick(PointerEventData eventData)
-        {
-            if (eventData.button == PointerEventData.InputButton.Left)
-            {
-                ConstruirTorre();
-            }
-        }
-
-        #endregion
-
-        public bool ConstruirTorre(bool esGratis = false)
-        {
-            if (TieneTorre)
-            {
-                if (GameManager.Instance != null)
-                {
-                    GameManager.Instance.MostrarNotificacion($"Esta casilla ya contiene una torre {torreInstanciada.tipo}.");
-                }
-                return false;
-            }
-
-            TipoTorre tipo = GameManager.Instance != null ? GameManager.Instance.tipoTorreAConstruir : TipoTorre.Basica;
-            int costo = GameManager.Instance != null ? GameManager.Instance.ObtenerCostoTorre(tipo) : costoTorre;
-
-            if (!esGratis)
-            {
-                if (GameManager.Instance == null || GameManager.Instance.OroActual < costo)
-                {
-                    if (GameManager.Instance != null)
-                    {
-                        GameManager.Instance.MostrarNotificacion($"¡Oro insuficiente! Se requieren {costo} de oro para la Torre {tipo}.");
-                    }
-                    return false;
-                }
-
-                GameManager.Instance.GastarOro(costo);
-            }
-
-            // Crear objeto de la torre seleccionada
-            GameObject torreObj = new GameObject($"Torre_{tipo}_{name}");
+            GameObject torreObj = new GameObject($"Torre_{tipo}_{indice}");
             torreObj.transform.position = transform.position;
             torreObj.transform.SetParent(transform, true);
 
-            torreInstanciada = torreObj.AddComponent<Torre>();
-            torreInstanciada.ConfigurarTipo(tipo);
-
-            // ── Integración Red de Energía MST ──────────────────────────────────
-            // Notificar al EnergyNetworkManager para que recalcule el MST con la nueva torre.
-            RedEnergiaMST.EnergyNetworkManager.Instance?.RegistrarTorre(torreObj);
-            // ────────────────────────────────────────────────────────────────────
+            Torre contenedor = torreObj.AddComponent<Torre>();
+            // Compensar la escala de la casilla para que la torre conserve su tamaño de diseño
+            Vector3 ls = transform.lossyScale;
+            if (ls.x > 0.01f && ls.y > 0.01f) contenedor.escalaBase = new Vector3(1f / ls.x, 1f / ls.y, 1f);
+            contenedor.ConfigurarTipo(tipo);
+            contenedor.inversionTotal = inversion;
+            contenedor.plot = this;
+            torreInstanciada = contenedor;
 
             RestaurarColor();
-
-            if (GameManager.Instance != null)
-            {
-                string infoCosto = esGratis ? "gratuita" : $"-{costo} de Oro";
-                GameManager.Instance.MostrarNotificacion($"🔨 ¡Torre {tipo} construida en {name}! ({infoCosto})");
-            }
-
-            return true;
+            if (RedTorresMST.Instance != null) RedTorresMST.Instance.Recalcular();
+            return contenedor;
         }
 
-        /// <summary>
-        /// Vende y destruye la torre de esta casilla, devuelve parte del oro al jugador
-        /// y notifica a la Red de Energía para que recalcule el MST sin esta torre.
-        /// </summary>
-        /// <param name="porcentajeReembolso">Fracción del costo de construcción devuelta (default 0.5 = 50%).</param>
-        public bool VenderTorre(float porcentajeReembolso = 0.5f)
+        /// <summary>Retira la torre de la casilla y actualiza la red MST.</summary>
+        public void QuitarTorre()
         {
-            if (!TieneTorre) return false;
-
-            // ── Integración Red de Energía MST ──────────────────────────────────
-            // Desregistrar ANTES de destruir el GameObject para que TowerNode sea válido.
-            RedEnergiaMST.EnergyNetworkManager.Instance?.DesregistrarTorre(torreInstanciada.gameObject);
-            // ────────────────────────────────────────────────────────────────────
-
-            int reembolso = Mathf.RoundToInt(GameManager.Instance != null
-                ? GameManager.Instance.ObtenerCostoTorre(torreInstanciada.tipo) * porcentajeReembolso
-                : costoTorre * porcentajeReembolso);
-
-            if (GameManager.Instance != null)
-            {
-                GameManager.Instance.oroActual += reembolso;
-                GameManager.Instance.MostrarNotificacion(
-                    $"💰 Torre {torreInstanciada.tipo} vendida. Reembolso: +{reembolso} de Oro."
-                );
-            }
-
-            Destroy(torreInstanciada.gameObject);
+            if (!TieneTorre) return;
+            Torre t = torreInstanciada;
             torreInstanciada = null;
+            Torre.Activas.Remove(t);
+            Destroy(t.gameObject);
             RestaurarColor();
-            return true;
+            if (RedTorresMST.Instance != null) RedTorresMST.Instance.Recalcular();
         }
     }
 }
