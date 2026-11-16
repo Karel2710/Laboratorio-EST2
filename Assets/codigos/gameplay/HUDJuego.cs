@@ -602,8 +602,10 @@ namespace TowerDefenseGameplay
                 "Clic izquierdo: construir / seleccionar · Clic derecho o Esc: cancelar · ⏸ ▶ ⏩: pausa y velocidad · 🔁 Auto: oleadas automáticas\n" +
                 "Nivel 1/2/3: reinicia la partida con otra dificultad y otra topología de caminos.\n\n" +
                 "<color=#66DDFF><b>VISTA 2.5D</b></color>\n" +
-                "🧊 2.5D alterna entre la vista inclinada con modelos 3D (kit Kenney Retro Fantasy, licencia CC0) y la vista 2D cenital. " +
-                "Es solo visual: caminos, grafos, torres y oleadas funcionan igual en ambas.\n\n" +
+                "🧊 2.5D alterna entre la vista inclinada con modelos 3D y la vista 2D cenital. " +
+                "Es solo visual: caminos, grafos, torres y oleadas funcionan igual en ambas. " +
+                "En 2.5D cada enemigo lleva un aro del color de su tipo. " +
+                "Modelos: Kenney Tower Defense Kit y KayKit Dungeon Pack (licencia CC0).\n\n" +
                 "<color=#66DDFF><b>ACCESIBILIDAD</b></color>\n" +
                 "👁 Daltonismo: cambia verde/rojo por azul/naranja. Cada enemigo tiene una silueta distinta además del color. " +
                 "Todos los avisos sonoros tienen también un mensaje visual en el banner superior. 🔊 silencia el sonido.\n\n" +

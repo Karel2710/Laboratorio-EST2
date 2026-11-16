@@ -26,6 +26,8 @@ namespace TowerDefenseGameplay
         private SpriteRenderer spriteRenderer;
         private TrailRenderer estela;
         private bool impacto = false;
+        private Transform municion3D;   // flecha o bala de cañón del kit Kenney en la vista 2.5D
+        private float escalaVisual = 1f;
 
         public void Configurar(Enemigo target, float danioBase, bool critico, bool ralentizar, bool splash = false, bool congelar = false)
         {
@@ -74,6 +76,8 @@ namespace TowerDefenseGameplay
 
             spriteRenderer.color = color;
             transform.localScale = Vector3.one * escala;
+            escalaVisual = escala;
+            ActualizarMunicion3D();
 
             // Estela luminosa
             if (estela == null)
@@ -110,6 +114,49 @@ namespace TowerDefenseGameplay
 
             transform.position += direccion.normalized * distanciaPaso;
             transform.rotation = Vista25D.Activa ? Vista25D.RotacionCartel : Quaternion.Euler(0, 0, Mathf.Atan2(direccion.y, direccion.x) * Mathf.Rad2Deg);
+
+            if (municion3D != null && municion3D.gameObject.activeSelf != Vista25D.Activa) ActualizarMunicion3D();
+            if (municion3D != null && Vista25D.Activa && direccion.sqrMagnitude > 0.0001f)
+            {
+                // La punta mira hacia donde vuela; "arriba" del modelo = altura (-Z del mundo)
+                municion3D.rotation = Quaternion.LookRotation(direccion.normalized, Vector3.back);
+            }
+        }
+
+        /// <summary>
+        /// En 2.5D los disparos cinéticos son flechas y los de área balas de cañón (modelos Kenney);
+        /// el hielo y la congelación siguen siendo orbes luminosos. En 2D vuelve el sprite.
+        /// </summary>
+        private void ActualizarMunicion3D()
+        {
+            bool aplica = !congelacionTotal && tipoDanio != TipoDanio.Hielo && (esAreaSplash || tipoDanio == TipoDanio.Cinetico);
+            bool usar = aplica && Vista25D.Activa;
+            if (usar && municion3D == null)
+            {
+                GameObject go = new GameObject("Municion3D");
+                go.transform.SetParent(transform, false);
+                string ruta = Recursos25D.TD + (esAreaSplash ? "weapon-ammo-cannonball" : "weapon-ammo-arrow");
+                Transform m = Recursos25D.CrearModelo(ruta, go.transform, Vector3.zero, Vector3.one);
+                if (m == null || !Recursos25D.Limites(m, go.transform, out Bounds b))
+                {
+                    Destroy(go);
+                    usar = false;
+                }
+                else
+                {
+                    float mayor = Mathf.Max(b.size.x, Mathf.Max(b.size.y, b.size.z));
+                    float f = (esAreaSplash ? 0.24f : 0.42f) / Mathf.Max(0.0001f, mayor);
+                    m.localScale = Vector3.one * f;
+                    m.localPosition = new Vector3(0f, -b.size.y * f * 0.5f, 0f); // centrado en la trayectoria
+                    municion3D = go.transform;
+                }
+            }
+            if (municion3D != null)
+            {
+                municion3D.localScale = Vector3.one / Mathf.Max(0.01f, escalaVisual);
+                municion3D.gameObject.SetActive(usar);
+            }
+            if (spriteRenderer != null) spriteRenderer.enabled = !(usar && municion3D != null);
         }
 
         private void AplicarEfectos(Enemigo e, float danioAplicado, bool critico)

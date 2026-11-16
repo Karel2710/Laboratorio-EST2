@@ -20,12 +20,16 @@ namespace TowerDefenseGameplay
         private SpriteRenderer spriteRenderer;
         private bool resaltado = false;
 
-        // Vista 2.5D: plataforma de piedra del kit Kenney que se tiñe al pasar el cursor
+        // Vista 2.5D: losa de construcción del kit Kenney Tower Defense que se tiñe al pasar el
+        // cursor, y marco de selección (esquinas) que aparece al resaltar la casilla
         private Transform pad3D;
         private Renderer[] rendPad;
+        private Transform marco3D;
+        private Renderer[] rendMarco;
         private Color tintePad = new Color(0f, 0f, 0f, 0f);
+        private Color tinteMarco = new Color(0f, 0f, 0f, -1f);
         private int versionVista = -1;
-        private static readonly Color tinteLibre = new Color(0.55f, 0.82f, 1f, 0.24f);
+        private static readonly Color tinteLibre = new Color(0.4f, 0.68f, 0.55f, 0.38f); // losa libre: discreta, entre piedra y pasto
 
         private static readonly Color colorLibre = new Color(0.45f, 0.85f, 1f, 0.13f);
         private static readonly Color colorOcupado = new Color(0.45f, 0.85f, 1f, 0.05f);
@@ -70,28 +74,50 @@ namespace TowerDefenseGameplay
         private void CrearPad()
         {
             pad3D = Recursos25D.CrearRaizModelo(transform, "Plataforma3D");
-            // floor mide 1 x 0.05 x 1: se escala al tamaño de la casilla y a ALTURA_PAD de grosor
-            if (Recursos25D.CrearModelo("floor", pad3D, Vector3.zero, new Vector3(0.8f, Vista25D.ALTURA_PAD / 0.05f, 0.8f)) == null)
+            // spawn-square mide 0.69 x 0.1 x 0.69: se lleva a 0.74 de lado y a ALTURA_PAD de grosor
+            float lado = 0.74f / 0.688f;
+            if (Recursos25D.CrearModelo(Recursos25D.TD + "spawn-square", pad3D, Vector3.zero, new Vector3(lado, Vista25D.ALTURA_PAD / 0.1f, lado)) == null)
             {
                 Recursos25D.Primitiva(PrimitiveType.Cube, pad3D, new Vector3(0f, Vista25D.ALTURA_PAD * 0.5f, 0f),
                     new Vector3(0.8f, Vista25D.ALTURA_PAD, 0.8f), Recursos25D.MaterialColor(new Color(0.5f, 0.52f, 0.56f)));
             }
             rendPad = pad3D.GetComponentsInChildren<Renderer>(true);
             Recursos25D.Tenir(rendPad, tintePad);
+
+            // Marco de esquinas (selection-a): oculto hasta que se resalte la casilla
+            marco3D = Recursos25D.CrearModelo(Recursos25D.TD + "selection-a", pad3D, new Vector3(0f, Vista25D.ALTURA_PAD + 0.004f, 0f), new Vector3(0.98f, 1.2f, 0.98f));
+            if (marco3D != null)
+            {
+                rendMarco = marco3D.GetComponentsInChildren<Renderer>(true);
+                marco3D.gameObject.SetActive(false);
+            }
+            tinteMarco = new Color(0f, 0f, 0f, -1f);
+            AplicarMarco(resaltado ? tintePad : Color.clear);
         }
 
         private void TenirPad(Color c)
         {
+            AplicarMarco(resaltado ? c : Color.clear);
             if (c == tintePad) return;
             tintePad = c;
             if (rendPad != null) Recursos25D.Tenir(rendPad, c);
+        }
+
+        /// <summary>Muestra el marco de esquinas con el color del resaltado (alfa 0 = oculto).</summary>
+        private void AplicarMarco(Color c)
+        {
+            if (marco3D == null || c == tinteMarco) return;
+            tinteMarco = c;
+            bool visible = c.a > 0.01f;
+            marco3D.gameObject.SetActive(visible);
+            if (visible) Recursos25D.Tenir(rendMarco, new Color(c.r, c.g, c.b, 0.85f));
         }
 
         public void ResaltarHover(bool valido)
         {
             resaltado = true;
             Color c = valido ? Paleta.Positivo : Paleta.Negativo;
-            TenirPad(new Color(c.r, c.g, c.b, 0.55f));
+            TenirPad(new Color(c.r, c.g, c.b, 0.5f));
             if (spriteRenderer == null) return;
             c.a = 0.5f;
             spriteRenderer.color = c;
@@ -101,7 +127,7 @@ namespace TowerDefenseGameplay
         {
             resaltado = true;
             Color c = Paleta.Dorado;
-            TenirPad(new Color(c.r, c.g, c.b, 0.5f));
+            TenirPad(new Color(c.r, c.g, c.b, 0.45f));
             if (spriteRenderer == null) return;
             c.a = 0.45f;
             spriteRenderer.color = c;

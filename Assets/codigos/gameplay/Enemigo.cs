@@ -73,6 +73,12 @@ namespace TowerDefenseGameplay
         private Vector3 posPrevia;
         private Color tinteActual = new Color(0f, 0f, 0f, -1f);
         private int versionVista = -1;
+        private Transform modeloKit;           // personaje KayKit u ovni Kenney (null = figura de primitivas)
+        private Transform brazoIzq, brazoDer;  // brazos de los personajes KayKit (se balancean al caminar)
+        private Quaternion rotBrazoIzq, rotBrazoDer;
+        private bool volador;                  // los ovnis flotan en vez de saltar
+        private float alturaVuelo;
+        private SpriteRenderer anilloTipo;     // aro del color del arquetipo bajo el enemigo
 
         /// <summary>Centro visible del enemigo: a media altura del cuerpo en 2.5D, su posición en 2D.</summary>
         public Vector3 PuntoImpacto
@@ -404,6 +410,7 @@ namespace TowerDefenseGameplay
             if (spriteRenderer != null) spriteRenderer.enabled = !v3;
             if (cuerpo3D != null) cuerpo3D.gameObject.SetActive(v3);
             if (sombra != null) sombra.enabled = v3;
+            if (anilloTipo != null) anilloTipo.enabled = v3;
 
             if (contenedorBarraVida != null)
             {
@@ -424,8 +431,9 @@ namespace TowerDefenseGameplay
         private Material Mat(Color c, Color emision = default, bool transparente = false) => Recursos25D.MaterialColor(c, emision, transparente);
 
         /// <summary>
-        /// Cuerpo hecho con primitivas (el kit Kenney no trae personajes). Cada arquetipo tiene una
-        /// silueta distinta además del color, igual que en los sprites 2D.
+        /// Cuerpo 3D por arquetipo. Los de a pie son personajes del kit KayKit (con su arma) y los
+        /// rápidos o especiales son ovnis del kit Kenney Tower Defense. Si falta un modelo se usa
+        /// una figura de primitivas con la misma silueta que el sprite 2D.
         /// </summary>
         private void ConstruirCuerpo3D()
         {
@@ -437,6 +445,46 @@ namespace TowerDefenseGameplay
             cuerpo3D.localScale = Vector3.one;
             cuerpo3D.rotation = Quaternion.Euler(0f, 0f, giro3D) * Recursos25D.RotModelo;
 
+            modeloKit = null;
+            brazoIzq = brazoDer = null;
+            volador = false;
+            alturaVuelo = 0f;
+            if (!ConstruirModeloKit()) ConstruirPrimitivas();
+
+            renderers3D = cuerpo3D.GetComponentsInChildren<Renderer>(true);
+
+            // Burbuja de escudo (Blindado Pesado): se oculta cuando el escudo se rompe
+            rEscudo3D = null;
+            if (escudoMaximo > 0f)
+            {
+                float d = Mathf.Max(0.95f, alturaCuerpo3D * 1.25f);
+                rEscudo3D = Recursos25D.Primitiva(PrimitiveType.Sphere, cuerpo3D, new Vector3(0f, alturaCuerpo3D * 0.5f, 0f), Vector3.one * d,
+                    Mat(new Color(0.3f, 0.9f, 1f, 0.22f), new Color(0.05f, 0.25f, 0.3f), true)).GetComponent<Renderer>();
+                rEscudo3D.sortingOrder = 6;
+            }
+
+            // Sombra suave sobre el camino
+            if (sombra == null)
+            {
+                sombra = GraficosProc.CrearSprite(transform, "Sombra3D", GraficosProc.Brillo, new Color(0f, 0f, 0f, 0.45f), 2, 0.9f);
+            }
+            // Aro del color del arquetipo: identifica el tipo aunque el modelo tenga sus propios colores
+            if (anilloTipo == null)
+            {
+                Color ct = SpritesEnemigos.ColorPrincipal(tipoEnemigo);
+                anilloTipo = GraficosProc.CrearSprite(transform, "AnilloTipo3D", GraficosProc.Anillo, new Color(ct.r, ct.g, ct.b, 0.8f), 3, 0.78f);
+            }
+            float esc = Mathf.Max(0.01f, transform.lossyScale.x);
+            sombra.transform.localPosition = new Vector3(0f, 0f, -(Vista25D.ALTURA_CAMINO + 0.003f) / esc);
+            anilloTipo.transform.localPosition = new Vector3(0f, 0f, -(Vista25D.ALTURA_CAMINO + 0.005f) / esc);
+            cuerpo3D.localPosition = new Vector3(0f, 0f, -Vista25D.ALTURA_CAMINO / esc);
+            tinteActual = new Color(0f, 0f, 0f, -1f);
+            posPrevia = transform.position;
+        }
+
+        /// <summary>Figura de respaldo hecha con primitivas (misma silueta que el sprite 2D).</summary>
+        private void ConstruirPrimitivas()
+        {
             Color c = SpritesEnemigos.ColorPrincipal(tipoEnemigo);
             Color oscuro = c * 0.55f; oscuro.a = 1f;
             bool furtivo = EsFurtivo;
@@ -499,27 +547,81 @@ namespace TowerDefenseGameplay
                     break;
             }
 
-            renderers3D = cuerpo3D.GetComponentsInChildren<Renderer>(true);
+        }
 
-            // Burbuja de escudo (Blindado Pesado): se oculta cuando el escudo se rompe
-            rEscudo3D = null;
-            if (escudoMaximo > 0f)
+        // Modelo de cada arquetipo: ruta, altura (o ancho, en ovnis) en unidades locales y arma en mano
+        private bool ConstruirModeloKit()
+        {
+            string ruta, arma = null, escudo = null;
+            float medida;
+            switch (tipoEnemigo)
             {
-                rEscudo3D = Recursos25D.Primitiva(PrimitiveType.Sphere, cuerpo3D, new Vector3(0f, 0.28f, 0f), Vector3.one * 0.95f,
-                    Mat(new Color(0.3f, 0.9f, 1f, 0.22f), new Color(0.05f, 0.25f, 0.3f), true)).GetComponent<Renderer>();
-                rEscudo3D.sortingOrder = 6;
+                case TipoEnemigo.Corredor: ruta = Recursos25D.TD + "enemy-ufo-b"; medida = 0.62f; volador = true; break;
+                case TipoEnemigo.Infanteria: ruta = Recursos25D.KK + "character_rogue"; medida = 0.66f; arma = "dagger_common"; break;
+                case TipoEnemigo.Blindado: ruta = Recursos25D.KK + "character_knight"; medida = 0.62f; arma = "sword_common"; escudo = "shield_common"; break;
+                case TipoEnemigo.Jefe: ruta = Recursos25D.KK + "character_barbarian"; medida = 0.72f; arma = "axeDouble_rare"; break;
+                case TipoEnemigo.Sanador: ruta = Recursos25D.KK + "character_mage"; medida = 0.7f; arma = "staff_rare"; break;
+                case TipoEnemigo.VelozFurtivo: ruta = Recursos25D.TD + "enemy-ufo-a"; medida = 0.58f; volador = true; break;
+                default: ruta = Recursos25D.TD + "enemy-ufo-c-weapon"; medida = 0.72f; volador = true; break; // BlindadoPesado
             }
 
-            // Sombra suave sobre el camino
-            if (sombra == null)
+            Transform m = Recursos25D.CrearModelo(ruta, cuerpo3D, Vector3.zero, Vector3.one);
+            if (m == null) return false;
+            if (!Recursos25D.Limites(m, cuerpo3D, out Bounds b) || b.size.y < 0.0001f) { Destroy(m.gameObject); return false; }
+
+            // Personajes: se escalan por su altura; ovnis: por su ancho
+            float f = volador ? medida / Mathf.Max(0.0001f, b.size.x) : medida / b.size.y;
+            m.localScale = Vector3.one * f;
+            alturaCuerpo3D = b.size.y * f;
+            modeloKit = m;
+
+            if (volador)
             {
-                sombra = GraficosProc.CrearSprite(transform, "Sombra3D", GraficosProc.Brillo, new Color(0f, 0f, 0f, 0.45f), 2, 0.9f);
+                alturaVuelo = 0.16f;
+                alturaCuerpo3D += alturaVuelo;
+                m.localPosition = new Vector3(0f, alturaVuelo, 0f);
+                if (EsFurtivo) Recursos25D.HacerTransparente(m, 0.45f);
             }
-            float esc = Mathf.Max(0.01f, transform.lossyScale.x);
-            sombra.transform.localPosition = new Vector3(0f, 0f, -(Vista25D.ALTURA_CAMINO + 0.003f) / esc);
-            cuerpo3D.localPosition = new Vector3(0f, 0f, -Vista25D.ALTURA_CAMINO / esc);
-            tinteActual = new Color(0f, 0f, 0f, -1f);
-            posPrevia = transform.position;
+            else
+            {
+                brazoIzq = Recursos25D.BuscarHijo(m, "arm", "left");
+                if (brazoIzq == null) brazoIzq = Recursos25D.BuscarHijo(m, "arn", "left"); // el mago trae "ArnLeft"
+                brazoDer = Recursos25D.BuscarHijo(m, "arm", "right");
+                if (brazoIzq != null) rotBrazoIzq = brazoIzq.localRotation;
+                if (brazoDer != null) rotBrazoDer = brazoDer.localRotation;
+                if (arma != null) Empunar(Recursos25D.KK + arma, brazoDer, alturaCuerpo3D * (tipoEnemigo == TipoEnemigo.Sanador ? 0.75f : 0.5f), false);
+                if (escudo != null) Empunar(Recursos25D.KK + escudo, brazoIzq, alturaCuerpo3D * 0.32f, true);
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Pone un arma (o escudo) en la mano: se ubica en el extremo inferior del brazo, inclinada
+        /// hacia adelante, y queda como hija del brazo para moverse con él.
+        /// </summary>
+        private void Empunar(string ruta, Transform brazo, float largo, bool esEscudo)
+        {
+            if (brazo == null) return;
+            if (!Recursos25D.Limites(brazo, cuerpo3D, out Bounds bb)) return;
+            float lado = Mathf.Sign(bb.center.x);
+            Vector3 mano = new Vector3(bb.center.x + lado * bb.extents.x * 0.35f, bb.min.y + bb.size.y * 0.12f, bb.center.z);
+
+            Transform t = Recursos25D.CrearModelo(ruta, cuerpo3D, mano, Vector3.one);
+            if (t == null) return;
+            if (Recursos25D.Limites(t, cuerpo3D, out Bounds ba) && ba.size.y > 0.0001f) t.localScale = Vector3.one * (largo / ba.size.y);
+
+            if (esEscudo)
+            {
+                // Escudo de lado, mirando hacia afuera y un poco al frente
+                t.localPosition = mano + new Vector3(lado * 0.04f, -largo * 0.35f, 0.02f);
+                t.localRotation = Quaternion.Euler(0f, lado * 70f, 0f);
+            }
+            else
+            {
+                t.localPosition = mano + new Vector3(0f, -largo * 0.12f, 0f);
+                t.localRotation = Quaternion.Euler(tipoEnemigo == TipoEnemigo.Sanador ? 8f : 50f, 0f, 0f);
+            }
+            t.SetParent(brazo, true);
         }
 
         private void AnimarCuerpo3D(float dt)
@@ -534,11 +636,30 @@ namespace TowerDefenseGameplay
             }
             cuerpo3D.rotation = Quaternion.Euler(0f, 0f, giro3D) * Recursos25D.RotModelo;
 
-            // Saltito al caminar (no cuando está congelado)
+            // Andar: saltito y brazos que se balancean; los ovnis flotan y giran (nada si está congelado)
             float esc = Mathf.Max(0.01f, transform.lossyScale.x);
             float salto = 0f;
-            if (congeladoRestante <= 0f && (tipoEnemigo == TipoEnemigo.Corredor || tipoEnemigo == TipoEnemigo.Infanteria || tipoEnemigo == TipoEnemigo.Sanador))
-                salto = Mathf.Abs(Mathf.Sin(Time.time * (tipoEnemigo == TipoEnemigo.Corredor ? 14f : 9f) + GetInstanceID())) * 0.06f;
+            bool quieto = congeladoRestante > 0f;
+            float fase = Time.time * (tipoEnemigo == TipoEnemigo.Corredor ? 14f : 9f) * Mathf.Max(0.3f, factorRalentizacion) + GetInstanceID();
+            if (modeloKit != null && volador)
+            {
+                if (!quieto)
+                {
+                    modeloKit.localPosition = new Vector3(0f, alturaVuelo + 0.04f * Mathf.Sin(fase * 0.35f), 0f);
+                    modeloKit.localRotation = Quaternion.Euler(0f, Time.time * (tipoEnemigo == TipoEnemigo.Corredor ? 260f : 120f), 0f);
+                }
+            }
+            else if (!quieto && (modeloKit != null || tipoEnemigo == TipoEnemigo.Corredor || tipoEnemigo == TipoEnemigo.Infanteria || tipoEnemigo == TipoEnemigo.Sanador))
+            {
+                salto = Mathf.Abs(Mathf.Sin(fase)) * (modeloKit != null ? 0.035f : 0.06f);
+                if (modeloKit != null)
+                {
+                    float vaiven = Mathf.Sin(fase) * 32f;
+                    if (brazoIzq != null) brazoIzq.localRotation = rotBrazoIzq * Quaternion.Euler(vaiven, 0f, 0f);
+                    if (brazoDer != null) brazoDer.localRotation = rotBrazoDer * Quaternion.Euler(-vaiven, 0f, 0f);
+                    modeloKit.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(fase) * 5f);
+                }
+            }
             cuerpo3D.localPosition = new Vector3(0f, 0f, -(Vista25D.ALTURA_CAMINO / esc + salto));
 
             if (rEscudo3D != null) rEscudo3D.enabled = escudoActual > 0f;

@@ -24,6 +24,9 @@ namespace TowerDefenseGameplay
         public const float ALTURA_CAMINO = 0.04f; // grosor de las baldosas del camino
         public const float ALTURA_PAD = 0.04f;    // grosor de las plataformas de construcción
 
+        /// <summary>Fondo de la vista 2.5D: gris azulado oscuro sobre el que flota la isla.</summary>
+        public static readonly Color COLOR_FONDO = new Color(0.12f, 0.13f, 0.17f);
+
         // Márgenes del encuadre (fracción de pantalla) para no quedar bajo el HUD
         private const float MARGEN_LATERAL = 0.015f;
         private const float MARGEN_INFERIOR = 0.095f;
@@ -33,6 +36,7 @@ namespace TowerDefenseGameplay
         private bool originalGuardado;
         private bool ortoOriginal;
         private float tamOriginal, fovOriginal, nearOriginal, farOriginal;
+        private Color fondoOriginal;
         private Vector3 posOriginal;
         private Quaternion rotOriginal;
         private int anchoPrevio, altoPrevio;
@@ -125,6 +129,7 @@ namespace TowerDefenseGameplay
                 farOriginal = cam.farClipPlane;
                 posOriginal = cam.transform.position;
                 rotOriginal = cam.transform.rotation;
+                fondoOriginal = cam.backgroundColor;
             }
 
             if (EfectosVisualesManager.Instance != null) EfectosVisualesManager.Instance.DetenerSacudida();
@@ -135,6 +140,7 @@ namespace TowerDefenseGameplay
                 cam.fieldOfView = CAMPO_VISION;
                 cam.nearClipPlane = 0.1f;
                 cam.farClipPlane = 300f;
+                cam.backgroundColor = COLOR_FONDO;
                 Encuadrar();
             }
             else
@@ -144,6 +150,7 @@ namespace TowerDefenseGameplay
                 cam.fieldOfView = fovOriginal;
                 cam.nearClipPlane = nearOriginal;
                 cam.farClipPlane = farOriginal;
+                cam.backgroundColor = fondoOriginal;
                 cam.transform.SetPositionAndRotation(posOriginal, rotOriginal);
             }
 

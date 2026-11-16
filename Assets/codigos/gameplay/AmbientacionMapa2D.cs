@@ -20,6 +20,9 @@ namespace TowerDefenseGameplay
         private SpriteRenderer srNucleo, srDomo, srVidaBase;
         private LineRenderer anilloVida;
         private PathGraph suscrito;
+        // Arte de fondo del mapa (imagen del bosque), velo y cuadrícula: solo se ven en la vista 2D.
+        // En 2.5D los reemplaza la isla de casillas de Escenario25D.
+        private readonly List<SpriteRenderer> fondo2D = new List<SpriteRenderer>();
         private int versionVista = -1;
 
         public static AmbientacionMapa2D Asegurar()
@@ -60,11 +63,16 @@ namespace TowerDefenseGameplay
             for (int i = 0; i < todos.Length; i++)
             {
                 SpriteRenderer sr = todos[i];
-                if (sr.sortingOrder == 0 && sr.GetComponent<PlotTorre>() == null && sr.bounds.size.x > 8f) sr.sortingOrder = -20;
+                if (sr.sortingOrder == 0 && sr.GetComponent<PlotTorre>() == null && sr.bounds.size.x > 8f)
+                {
+                    sr.sortingOrder = -20;
+                    fondo2D.Add(sr);
+                }
             }
 
             SpriteRenderer velo = GraficosProc.CrearSprite(transform, "VeloTactico", GraficosProc.Cuadrado, new Color(0.02f, 0.06f, 0.14f, 0.42f), -15);
             velo.transform.localScale = new Vector3(ancho, alto, 1f);
+            fondo2D.Add(velo);
 
             // Cuadrícula táctica (una textura repetida)
             const int px = 64;
@@ -87,6 +95,7 @@ namespace TowerDefenseGameplay
             srG.drawMode = SpriteDrawMode.Tiled;
             srG.size = new Vector2(ancho, alto);
             srG.sortingOrder = -14;
+            fondo2D.Add(srG);
         }
 
         private void ReconstruirCaminos()
@@ -196,7 +205,7 @@ namespace TowerDefenseGameplay
                 ReconstruirCaminos();
             }
 
-            // En 2.5D los caminos, el portal y la base 2D los reemplaza Escenario25D
+            // En 2.5D el fondo, los caminos, el portal y la base 2D los reemplaza Escenario25D
             if (versionVista != Vista25D.Version)
             {
                 versionVista = Vista25D.Version;
@@ -204,6 +213,7 @@ namespace TowerDefenseGameplay
                 capaCaminos.gameObject.SetActive(v2);
                 portal.gameObject.SetActive(v2);
                 baseAliada.gameObject.SetActive(v2);
+                for (int i = 0; i < fondo2D.Count; i++) if (fondo2D[i] != null) fondo2D[i].enabled = v2;
                 if (v2) ColocarPortalYBase();
             }
             if (Vista25D.Activa) return;

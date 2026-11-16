@@ -5,8 +5,9 @@ using UnityEngine.Rendering;
 namespace TowerDefenseGameplay
 {
     /// <summary>
-    /// Recursos de la vista 2.5D: carga de los modelos del kit Kenney (Resources/Kenney),
-    /// materiales con el sombreado propio "TD/Lambert25D" y primitivas de Unity.
+    /// Recursos de la vista 2.5D: carga de los modelos de los kits Kenney Tower Defense
+    /// (Resources/KenneyTD) y KayKit Dungeon (Resources/KayKit), materiales con el sombreado
+    /// propio "TD/Lambert25D" y primitivas de Unity.
     ///
     /// Convención de ejes: la lógica del juego vive en el plano XY (z = 0) y la ALTURA
     /// de los objetos 3D crece hacia -Z (hacia la cámara). Los modelos se construyen en
@@ -18,29 +19,48 @@ namespace TowerDefenseGameplay
     {
         public static readonly Quaternion RotModelo = Quaternion.Euler(-90f, 0f, 0f);
 
+        /// <summary>Prefijos de carpeta de cada kit dentro de Resources.</summary>
+        public const string TD = "KenneyTD/";
+        public const string KK = "KayKit/";
+
         private static Shader shader;
         private static bool shaderBuscado;
         private static readonly Dictionary<string, GameObject> prefabs = new Dictionary<string, GameObject>();
         private static readonly Dictionary<string, Material> materialesModelo = new Dictionary<string, Material>();
         private static readonly Dictionary<string, Material> materialesColor = new Dictionary<string, Material>();
-        private static readonly Dictionary<string, Texture2D> texturas = new Dictionary<string, Texture2D>();
+        private static readonly Dictionary<string, float> factorKit = new Dictionary<string, float>();
+        private static Texture2D texColormap;
+        private static bool colormapBuscado;
         private static MaterialPropertyBlock bloque;
 
         private static int idTinte = -1;
 
-        // Material del modelo FBX → textura del kit (misma correspondencia que los GLB de Kenney)
-        private static readonly Dictionary<string, string> texturaDeMaterial = new Dictionary<string, string>
+        // Paleta de los materiales del kit KayKit (no usa texturas: cada material es un color plano).
+        // Valores tomados de los archivos del kit y pasados a espacio sRGB.
+        private static readonly Dictionary<string, Color> coloresKayKit = new Dictionary<string, Color>
         {
-            { "bricks", "cobblestoneAlternative" },
-            { "stones", "cobblestone" },
-            { "stonesPainted", "cobblestonePainted" },
-            { "planks", "planks" },
-            { "barrel", "barrel" },
-            { "details", "details" },
-            { "fence", "fence" },
-            { "roof", "roof" },
-            { "tree", "tree" },
-            { "water", "water" }
+            { "beige", new Color(0.856f, 0.684f, 0.492f) },
+            { "black", new Color(0.151f, 0.197f, 0.213f) },
+            { "blue", new Color(0.391f, 0.708f, 1f) },
+            { "bluedark", new Color(0.397f, 0.54f, 0.671f) },
+            { "bluelight", new Color(0.635f, 0.754f, 0.864f) },
+            { "brown", new Color(0.784f, 0.52f, 0.374f) },
+            { "browndark", new Color(0.607f, 0.352f, 0.27f) },
+            { "glass", new Color(0.906f, 0.906f, 0.906f) },
+            { "gold", new Color(0.733f, 0.613f, 0.359f) },
+            { "green", new Color(0.283f, 0.736f, 0.552f) },
+            { "greendark", new Color(0.158f, 0.544f, 0.553f) },
+            { "metal", new Color(0.666f, 0.721f, 0.747f) },
+            { "mud", new Color(0.593f, 0.562f, 0.526f) },
+            { "pinklight", new Color(0.965f, 0.753f, 0.612f) },
+            { "purple", new Color(0.547f, 0.253f, 0.786f) },
+            { "purpledark", new Color(0.282f, 0.267f, 0.443f) },
+            { "red", new Color(1f, 0.172f, 0.378f) },
+            { "stone", new Color(0.476f, 0.515f, 0.533f) },
+            { "stone2", new Color(0.351f, 0.378f, 0.393f) },
+            { "stonedark", new Color(0.351f, 0.378f, 0.393f) },
+            { "white", new Color(0.906f, 0.906f, 0.906f) },
+            { "wooddark", new Color(0.429f, 0.376f, 0.359f) }
         };
 
         /// <summary>Convierte un punto del suelo del juego a coordenadas de espacio de modelo.</summary>
@@ -112,52 +132,63 @@ namespace TowerDefenseGameplay
             return m;
         }
 
-        private static Texture2D TexturaKit(string nombre)
+        /// <summary>Textura de colores del kit Kenney Tower Defense (todas sus piezas la comparten).</summary>
+        private static Texture2D Colormap()
         {
-            if (string.IsNullOrEmpty(nombre)) return null;
-            if (texturas.TryGetValue(nombre, out Texture2D t)) return t;
-            t = Resources.Load<Texture2D>("Kenney/Textures/" + nombre);
-            if (t != null)
+            if (colormapBuscado) return texColormap;
+            colormapBuscado = true;
+            texColormap = Resources.Load<Texture2D>(TD + "Textures/colormap");
+            if (texColormap != null)
             {
-                t.filterMode = FilterMode.Point;        // estética retro pixelada del kit
-                t.wrapMode = TextureWrapMode.Repeat;    // los modelos del kit repiten la textura (UV fuera de 0..1)
+                texColormap.filterMode = FilterMode.Point;      // cada pieza toma colores planos de la paleta
+                texColormap.wrapMode = TextureWrapMode.Clamp;
             }
-            texturas[nombre] = t;
-            return t;
+            return texColormap;
         }
 
+        /// <summary>Nombre del material sin sufijos de Unity ("Stone (Instance)", "colormap.001").</summary>
         private static string NombreBase(Material m)
         {
             if (m == null) return "default";
             string n = m.name.Replace(" (Instance)", "").Trim();
-            int i = n.IndexOf(' ');
-            return i > 0 ? n.Substring(0, i) : n;
+            int i = n.IndexOfAny(new[] { ' ', '.' });
+            return (i > 0 ? n.Substring(0, i) : n).ToLowerInvariant();
         }
 
-        /// <summary>Convierte el material importado del FBX al sombreado propio conservando su textura.</summary>
+        /// <summary>Convierte el material importado del FBX al sombreado propio conservando su aspecto.</summary>
         private static Material MaterialDeModelo(Material original)
         {
             string clave = NombreBase(original);
             if (materialesModelo.TryGetValue(clave, out Material m) && m != null) return m;
 
             Texture tex = null;
-            texturaDeMaterial.TryGetValue(clave, out string nombreTex);
-            tex = TexturaKit(nombreTex);
-            if (tex == null && original != null)
+            Color color = Color.white;
+            if (clave == "colormap")
+            {
+                tex = Colormap();
+            }
+            else if (coloresKayKit.TryGetValue(clave, out Color c))
+            {
+                color = c;
+            }
+
+            // Respaldo: lo que traiga el material importado
+            if (tex == null && clave == "colormap" && original != null)
             {
                 if (original.HasProperty("_BaseMap")) tex = original.GetTexture("_BaseMap");
                 if (tex == null && original.HasProperty("_MainTex")) tex = original.GetTexture("_MainTex");
-                if (tex != null)
-                {
-                    tex.filterMode = FilterMode.Point;
-                    tex.wrapMode = TextureWrapMode.Repeat;
-                }
+            }
+            if (clave != "colormap" && !coloresKayKit.ContainsKey(clave) && original != null)
+            {
+                if (original.HasProperty("_BaseColor")) color = original.GetColor("_BaseColor");
+                else if (original.HasProperty("_Color")) color = original.GetColor("_Color");
+                if (original.HasProperty("_BaseMap")) tex = original.GetTexture("_BaseMap");
+                if (tex == null && original.HasProperty("_MainTex")) tex = original.GetTexture("_MainTex");
             }
 
-            bool planta = clave == "tree";
-            bool lamina = planta || clave == "fence";
-            m = NuevoMaterial(tex != null ? tex : Texture2D.whiteTexture, Color.white, Color.clear, false, planta ? 0.5f : 0f, lamina);
-            m.name = "TD_Kenney_" + clave;
+            // Doble cara como en los archivos originales de los kits (el sombreado corrige la normal de la cara trasera)
+            m = NuevoMaterial(tex != null ? tex : Texture2D.whiteTexture, color, Color.clear, false, 0f, true);
+            m.name = "TD_Modelo_" + clave;
             materialesModelo[clave] = m;
             return m;
         }
@@ -166,13 +197,75 @@ namespace TowerDefenseGameplay
 
         #region Modelos y Primitivas
 
-        public static GameObject CargarPrefab(string nombre)
+        /// <summary>Carga un modelo por su ruta dentro de Resources (p. ej. "KenneyTD/tile").</summary>
+        public static GameObject CargarPrefab(string ruta)
         {
-            if (prefabs.TryGetValue(nombre, out GameObject p)) return p;
-            p = Resources.Load<GameObject>("Kenney/" + nombre);
-            if (p == null) Debug.LogWarning($"[Vista 2.5D] No se encontró el modelo Resources/Kenney/{nombre}; se usará una figura simple.");
-            prefabs[nombre] = p;
+            if (prefabs.TryGetValue(ruta, out GameObject p)) return p;
+            p = Resources.Load<GameObject>(ruta);
+            if (p == null) Debug.LogWarning($"[Vista 2.5D] No se encontró el modelo Resources/{ruta}; se usará una figura simple.");
+            prefabs[ruta] = p;
             return p;
+        }
+
+        /// <summary>True si el modelo existe en Resources.</summary>
+        public static bool Existe(string ruta) => CargarPrefab(ruta) != null;
+
+        /// <summary>Límites de todas las mallas de <paramref name="objeto"/> expresados en el espacio local de <paramref name="espacio"/>.</summary>
+        public static bool Limites(Transform objeto, Transform espacio, out Bounds b)
+        {
+            Matrix4x4 aLocal = espacio.worldToLocalMatrix;
+            bool hay = false;
+            b = new Bounds();
+            MeshFilter[] filtros = objeto.GetComponentsInChildren<MeshFilter>(true);
+            for (int i = 0; i < filtros.Length; i++)
+            {
+                if (filtros[i].sharedMesh == null) continue;
+                Bounds mb = filtros[i].sharedMesh.bounds;
+                Matrix4x4 m = aLocal * filtros[i].transform.localToWorldMatrix;
+                for (int k = 0; k < 8; k++)
+                {
+                    Vector3 esquina = mb.center + Vector3.Scale(mb.extents, new Vector3((k & 1) == 0 ? -1 : 1, (k & 2) == 0 ? -1 : 1, (k & 4) == 0 ? -1 : 1));
+                    Vector3 q = m.MultiplyPoint3x4(esquina);
+                    if (!hay) { b = new Bounds(q, Vector3.zero); hay = true; }
+                    else b.Encapsulate(q);
+                }
+            }
+            return hay;
+        }
+
+        /// <summary>
+        /// Corrige la escala de importación de cada kit (por si el FBX llega en centímetros):
+        /// mide una pieza de referencia de tamaño conocido y redondea a la potencia de 10 más cercana.
+        /// </summary>
+        private static float FactorKit(string ruta)
+        {
+            string kit = ruta.StartsWith(TD) ? TD : (ruta.StartsWith(KK) ? KK : "");
+            if (kit.Length == 0) return 1f;
+            if (factorKit.TryGetValue(kit, out float f)) return f;
+
+            f = 1f;
+            string referencia = kit == TD ? TD + "tile" : KK + "barrel";
+            float esperado = 1f; // la casilla de Kenney mide 1 de ancho; el barril de KayKit, 1 de alto
+            GameObject prefab = CargarPrefab(referencia);
+            if (prefab != null)
+            {
+                // Se mide igual que en CrearModelo: dentro de un contenedor neutro en el origen
+                GameObject tmp = new GameObject("MedidaKit");
+                Object.Instantiate(prefab, tmp.transform, false);
+                if (Limites(tmp.transform, tmp.transform, out Bounds b))
+                {
+                    float medido = kit == TD ? b.size.x : b.size.y;
+                    if (medido > 0.00001f)
+                    {
+                        float lg = Mathf.Log10(esperado / medido);
+                        if (Mathf.Abs(lg) > 0.5f) f = Mathf.Pow(10f, Mathf.Round(lg));
+                    }
+                }
+                Object.Destroy(tmp);
+            }
+            if (!Mathf.Approximately(f, 1f)) Debug.Log($"[Vista 2.5D] Escala de importación corregida para {kit}: x{f}");
+            factorKit[kit] = f;
+            return f;
         }
 
         /// <summary>Crea una raíz en espacio de modelo (rotada RotModelo) con escala de mundo 1.</summary>
@@ -190,42 +283,29 @@ namespace TowerDefenseGameplay
         }
 
         /// <summary>
-        /// Instancia un modelo del kit bajo una raíz de espacio de modelo. La base del modelo queda
+        /// Instancia un modelo de un kit bajo una raíz de espacio de modelo. La base del modelo queda
         /// en y = 0 y su centro en x/z = 0, sin importar el pivote o la escala de importación del FBX.
+        /// <paramref name="ruta"/> incluye la carpeta del kit (Recursos25D.TD + "tile").
         /// Devuelve null si el modelo no existe.
         /// </summary>
-        public static Transform CrearModelo(string nombre, Transform padre, Vector3 posicion, Vector3 escala, float giroY = 0f)
+        public static Transform CrearModelo(string ruta, Transform padre, Vector3 posicion, Vector3 escala, float giroY = 0f)
         {
-            GameObject prefab = CargarPrefab(nombre);
+            GameObject prefab = CargarPrefab(ruta);
             if (prefab == null) return null;
+            float factor = FactorKit(ruta);
 
-            GameObject cont = new GameObject(nombre);
+            GameObject cont = new GameObject(ruta.Substring(ruta.LastIndexOf('/') + 1));
             cont.transform.SetParent(padre, false);
             cont.transform.localPosition = posicion;
             cont.transform.localRotation = Quaternion.Euler(0f, giroY, 0f);
             cont.transform.localScale = escala;
 
             GameObject inst = Object.Instantiate(prefab, cont.transform, false);
+            if (!Mathf.Approximately(factor, 1f)) inst.transform.localScale *= factor;
 
-            // Límites en el espacio local del contenedor para centrar y apoyar sobre el suelo
-            Matrix4x4 aLocal = cont.transform.worldToLocalMatrix;
-            bool hay = false;
-            Bounds b = new Bounds();
-            MeshFilter[] filtros = inst.GetComponentsInChildren<MeshFilter>(true);
-            for (int i = 0; i < filtros.Length; i++)
-            {
-                if (filtros[i].sharedMesh == null) continue;
-                Bounds mb = filtros[i].sharedMesh.bounds;
-                Matrix4x4 m = aLocal * filtros[i].transform.localToWorldMatrix;
-                for (int k = 0; k < 8; k++)
-                {
-                    Vector3 esquina = mb.center + Vector3.Scale(mb.extents, new Vector3((k & 1) == 0 ? -1 : 1, (k & 2) == 0 ? -1 : 1, (k & 4) == 0 ? -1 : 1));
-                    Vector3 p = m.MultiplyPoint3x4(esquina);
-                    if (!hay) { b = new Bounds(p, Vector3.zero); hay = true; }
-                    else b.Encapsulate(p);
-                }
-            }
-            if (hay) inst.transform.localPosition -= new Vector3(b.center.x, b.min.y, b.center.z);
+            // Centrar y apoyar sobre el suelo usando los límites en el espacio del contenedor
+            if (Limites(inst.transform, cont.transform, out Bounds b))
+                inst.transform.localPosition -= new Vector3(b.center.x, b.min.y, b.center.z);
 
             Renderer[] rs = inst.GetComponentsInChildren<Renderer>(true);
             for (int i = 0; i < rs.Length; i++)
@@ -239,7 +319,56 @@ namespace TowerDefenseGameplay
 
             Collider[] cols = inst.GetComponentsInChildren<Collider>(true);
             for (int i = 0; i < cols.Length; i++) Object.Destroy(cols[i]);
+            Animator[] anims = inst.GetComponentsInChildren<Animator>(true);
+            for (int i = 0; i < anims.Length; i++) Object.Destroy(anims[i]);
             return cont.transform;
+        }
+
+        private static readonly Dictionary<string, Material> materialesTransparentes = new Dictionary<string, Material>();
+
+        /// <summary>Vuelve semitransparente un modelo (p. ej. el enemigo furtivo) con copias cacheadas de sus materiales.</summary>
+        public static void HacerTransparente(Transform modelo, float alfa)
+        {
+            Renderer[] rs = modelo.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < rs.Length; i++)
+            {
+                Material[] mats = rs[i].sharedMaterials;
+                for (int k = 0; k < mats.Length; k++)
+                {
+                    if (mats[k] == null) continue;
+                    string clave = mats[k].name + "_" + alfa.ToString("0.00");
+                    if (!materialesTransparentes.TryGetValue(clave, out Material t) || t == null)
+                    {
+                        t = new Material(mats[k]) { name = clave };
+                        Color c = t.HasProperty("_Color") ? t.GetColor("_Color") : Color.white;
+                        c.a = alfa;
+                        t.SetColor("_Color", c);
+                        t.SetColor("_BaseColor", c);
+                        t.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);
+                        t.SetFloat("_DstBlend", (float)BlendMode.OneMinusSrcAlpha);
+                        t.SetFloat("_ZWrite", 0f);
+                        t.renderQueue = (int)RenderQueue.Transparent;
+                        materialesTransparentes[clave] = t;
+                    }
+                    mats[k] = t;
+                }
+                rs[i].sharedMaterials = mats;
+            }
+        }
+
+        /// <summary>Busca el primer descendiente cuyo nombre contenga todos los fragmentos (sin distinguir mayúsculas).</summary>
+        public static Transform BuscarHijo(Transform raiz, params string[] fragmentos)
+        {
+            if (raiz == null) return null;
+            Transform[] todos = raiz.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < todos.Length; i++)
+            {
+                string n = todos[i].name.ToLowerInvariant();
+                bool ok = true;
+                for (int k = 0; ok && k < fragmentos.Length; k++) ok = n.Contains(fragmentos[k].ToLowerInvariant());
+                if (ok && todos[i] != raiz) return todos[i];
+            }
+            return null;
         }
 
         /// <summary>Primitiva de Unity sin colisionador, con material propio, en espacio de modelo.</summary>
