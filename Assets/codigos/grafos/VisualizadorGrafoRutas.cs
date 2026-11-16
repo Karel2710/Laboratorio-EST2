@@ -26,6 +26,7 @@ namespace GrafosEST2
         private readonly List<LineRenderer> lineasBloqueo = new List<LineRenderer>();
         private readonly List<TextMesh> textosBloqueo = new List<TextMesh>();
         private PathGraph suscrito;
+        private int versionVista = -1;
 
         public static VisualizadorGrafoRutas Asegurar()
         {
@@ -87,15 +88,16 @@ namespace GrafosEST2
                 Color c = ColorTerreno(mult);
                 c.a = 0.85f;
                 LineRenderer lr = GraficosProc.CrearLinea(capaGrafo, "Arista", c, c, 0.06f, 19);
-                lr.SetPosition(0, a.transform.position);
-                lr.SetPosition(1, b.transform.position);
+                lr.SetPosition(0, Vista25D.Elevar(a.transform.position, 0.08f));
+                lr.SetPosition(1, Vista25D.Elevar(b.transform.position, 0.08f));
 
                 Vector3 medio = (a.transform.position + b.transform.position) * 0.5f;
                 Vector3 dir = (b.transform.position - a.transform.position).normalized;
                 Vector3 perp = new Vector3(-dir.y, dir.x, 0f) * 0.26f;
                 string etiqueta = a.PesoHacia(b).ToString("0.0") + (mult > 1.05f ? $" (x{mult:0.0})" : "");
                 TextMesh tm = GraficosProc.CrearTextoMundo(capaGrafo, etiqueta, Color.Lerp(c, Color.white, 0.4f), 0.26f, 22);
-                tm.transform.position = medio + perp;
+                tm.transform.position = Vista25D.Elevar(medio + perp, 0.12f);
+                tm.transform.rotation = Vista25D.RotacionCartel;
             }
 
             // Nodos con su identificador
@@ -105,15 +107,17 @@ namespace GrafosEST2
                 if (n == null) continue;
                 Color c = n.esInicio ? Paleta.Positivo : (n.esFinal ? Paleta.Negativo : new Color(0.2f, 0.55f, 1f));
                 SpriteRenderer borde = GraficosProc.CrearSprite(capaGrafo, "NodoBorde", GraficosProc.Circulo, Color.white, 20, 0.5f);
-                borde.transform.position = n.transform.position;
+                borde.transform.position = Vista25D.Elevar(n.transform.position, 0.09f);
                 SpriteRenderer sr = GraficosProc.CrearSprite(capaGrafo, "Nodo", GraficosProc.Circulo, c, 21, 0.42f);
-                sr.transform.position = n.transform.position;
+                sr.transform.position = Vista25D.Elevar(n.transform.position, 0.095f);
                 TextMesh tm = GraficosProc.CrearTextoMundo(capaGrafo, "N" + n.nodeId, Color.white, 0.24f, 22);
-                tm.transform.position = n.transform.position;
+                tm.transform.position = Vista25D.Elevar(n.transform.position, 0.12f);
+                tm.transform.rotation = Vista25D.RotacionCartel;
                 if (n.esInicio || n.esFinal)
                 {
                     TextMesh rot = GraficosProc.CrearTextoMundo(capaGrafo, n.esInicio ? "INICIO" : "BASE", c, 0.22f, 22);
-                    rot.transform.position = n.transform.position + new Vector3(0, n.esInicio ? -0.42f : 0.42f, 0);
+                    rot.transform.position = Vista25D.Elevar(n.transform.position + new Vector3(0, n.esInicio ? -0.42f : 0.42f, 0), 0.12f);
+                    rot.transform.rotation = Vista25D.RotacionCartel;
                 }
             }
 
@@ -126,7 +130,7 @@ namespace GrafosEST2
                 for (int i = 0; i < ruta.Count; i++)
                 {
                     if (ruta[i] == null) continue;
-                    Vector3 p = ruta[i].transform.position;
+                    Vector3 p = Vista25D.Elevar(ruta[i].transform.position, 0.085f);
                     if (puntosRuta.Count > 0) longitudRuta += Vector3.Distance(puntosRuta[puntosRuta.Count - 1], p);
                     puntosRuta.Add(p);
                 }
@@ -166,6 +170,12 @@ namespace GrafosEST2
             }
             if (g == null) return;
 
+            if (versionVista != Vista25D.Version)
+            {
+                versionVista = Vista25D.Version;
+                Reconstruir();
+            }
+
             float t = Time.unscaledTime;
 
             // Animación de la ruta óptima: brillo pulsante y destellos que la recorren
@@ -202,14 +212,15 @@ namespace GrafosEST2
                 textosBloqueo[i].gameObject.SetActive(activo);
                 if (!activo) continue;
                 PathGraph.Bloqueo b = g.bloqueos[i];
-                Vector3 pa = b.a.transform.position, pb = b.b.transform.position;
+                Vector3 pa = Vista25D.Elevar(b.a.transform.position, 0.1f), pb = Vista25D.Elevar(b.b.transform.position, 0.1f);
                 lineasBloqueo[i].SetPosition(0, Vector3.Lerp(pa, pb, 0.12f));
                 lineasBloqueo[i].SetPosition(1, Vector3.Lerp(pa, pb, 0.88f));
                 Color cb = Color.Lerp(Paleta.Negativo, Paleta.Aviso, 0.5f + 0.5f * Mathf.Sin(t * 8f));
                 cb.a = 0.8f;
                 lineasBloqueo[i].startColor = cb;
                 lineasBloqueo[i].endColor = cb;
-                textosBloqueo[i].transform.position = (pa + pb) * 0.5f;
+                textosBloqueo[i].transform.position = Vista25D.Elevar((pa + pb) * 0.5f, Vista25D.Activa ? 0.75f : 0f);
+                textosBloqueo[i].transform.rotation = Vista25D.RotacionCartel;
                 textosBloqueo[i].text = b.tiempoRestante >= 0f ? $"BLOQUEADO {b.tiempoRestante:0}s" : "BLOQUEADO";
             }
 
@@ -219,8 +230,8 @@ namespace GrafosEST2
             lineaPrevia.gameObject.SetActive(previa);
             if (previa)
             {
-                lineaPrevia.SetPosition(0, gm.BarricadaPreviaA.transform.position);
-                lineaPrevia.SetPosition(1, gm.BarricadaPreviaB.transform.position);
+                lineaPrevia.SetPosition(0, Vista25D.Elevar(gm.BarricadaPreviaA.transform.position, 0.1f));
+                lineaPrevia.SetPosition(1, Vista25D.Elevar(gm.BarricadaPreviaB.transform.position, 0.1f));
                 Color cp = Paleta.Aviso;
                 cp.a = 0.5f + 0.4f * Mathf.Sin(t * 10f);
                 lineaPrevia.startColor = cp;

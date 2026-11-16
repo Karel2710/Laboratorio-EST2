@@ -23,6 +23,7 @@ namespace TowerDefenseGameplay
         public void Mostrar(Vector3 centro, float radio, Color color, bool esRadar, Torre excluir)
         {
             circulo.gameObject.SetActive(true);
+            centro = Vista25D.Elevar(centro, 0.07f);
             GraficosProc.TrazarCirculo(circulo, centro, radio, 64);
             Color c = color;
             c.a = 0.85f;
@@ -41,7 +42,7 @@ namespace TowerDefenseGameplay
                 enlaces[i].gameObject.SetActive(activo);
                 if (!activo) continue;
                 enlaces[i].SetPosition(0, centro);
-                enlaces[i].SetPosition(1, vecinas[i].transform.position);
+                enlaces[i].SetPosition(1, Vista25D.Elevar(vecinas[i].transform.position, 0.07f));
                 Color ce = Paleta.Cian;
                 ce.a = 0.35f + 0.25f * Mathf.Sin(Time.unscaledTime * 6f);
                 enlaces[i].startColor = ce;

@@ -68,9 +68,23 @@ namespace TowerDefenseGameplay
 
         #region Texto Flotante
 
+        /// <summary>En la vista 2.5D los efectos que llegan a ras de suelo (z = 0) se elevan.</summary>
+        private static Vector3 AjustarAltura(Vector3 pos, float altura)
+        {
+            if (Vista25D.Activa && Mathf.Abs(pos.z) < 0.001f) return new Vector3(pos.x, pos.y, -altura);
+            if (!Vista25D.Activa) return new Vector3(pos.x, pos.y, 0f);
+            return pos;
+        }
+
+        public void DetenerSacudida()
+        {
+            sacudiendo = false;
+        }
+
         public void TextoFlotante(Vector3 pos, string texto, Color color, float escala = 1f)
         {
             if (textos.Count > 70) return; // límite para no saturar la pantalla
+            pos = AjustarAltura(pos, 0.9f);
 
             TextMesh tm;
             if (poolTextos.Count > 0)
@@ -85,12 +99,16 @@ namespace TowerDefenseGameplay
 
             tm.text = texto;
             tm.color = color;
-            tm.transform.position = new Vector3(pos.x, pos.y, 0f);
+            tm.transform.position = pos;
+            tm.transform.rotation = Vista25D.RotacionCartel;
             tm.transform.localScale = Vector3.one * escala;
+            Vector3 vel = new Vector3(Random.Range(-0.25f, 0.25f), 1.5f, 0f);
+            Camera cam3 = Vista25D.Activa ? Vista25D.Camara : null;
+            if (cam3 != null) vel = cam3.transform.up * 1.5f + cam3.transform.right * Random.Range(-0.25f, 0.25f);
             textos.Add(new TextoFx
             {
                 tm = tm, t = 0f, dur = 0.85f, escala = escala, color = color,
-                vel = new Vector3(Random.Range(-0.25f, 0.25f), 1.5f, 0f)
+                vel = vel
             });
         }
 
@@ -143,13 +161,14 @@ namespace TowerDefenseGameplay
         public void Explosion(Vector3 pos, Color color, int cantidad = 12, float fuerza = 3f)
         {
             if (particulas == null) return;
+            pos = AjustarAltura(pos, 0.35f);
             for (int i = 0; i < cantidad; i++)
             {
                 Vector2 dir = Random.insideUnitCircle.normalized * Random.Range(fuerza * 0.35f, fuerza);
                 ParticleSystem.EmitParams ep = new ParticleSystem.EmitParams
                 {
                     position = pos,
-                    velocity = new Vector3(dir.x, dir.y, 0f),
+                    velocity = new Vector3(dir.x, dir.y, Vista25D.Activa ? -Random.Range(0.3f, 1.2f) * fuerza * 0.5f : 0f),
                     startColor = Color.Lerp(color, Color.white, Random.Range(0f, 0.45f)),
                     startSize = Random.Range(0.1f, 0.24f),
                     startLifetime = Random.Range(0.25f, 0.6f)
@@ -186,7 +205,7 @@ namespace TowerDefenseGameplay
         {
             if (ondas.Count > 40) return;
             LineRenderer lr = TomarLinea(13);
-            ondas.Add(new OndaFx { lr = lr, centro = pos, radio = radio, t = 0f, dur = duracion, color = color });
+            ondas.Add(new OndaFx { lr = lr, centro = AjustarAltura(pos, 0.07f), radio = radio, t = 0f, dur = duracion, color = color });
         }
 
         /// <summary>Relámpago zigzagueante entre dos puntos (Bobina Tesla).</summary>
@@ -224,6 +243,7 @@ namespace TowerDefenseGameplay
                 sr = GraficosProc.CrearSprite(transform, "Destello", GraficosProc.Brillo, Color.white, 17);
             }
             sr.transform.position = pos;
+            sr.transform.rotation = Vista25D.RotacionCartel;
             destellos.Add(new DestelloFx { sr = sr, t = 0f, dur = duracion, tam = tam, color = color });
         }
 
@@ -265,6 +285,7 @@ namespace TowerDefenseGameplay
                 f.t += dt;
                 float k = f.t / f.dur;
                 f.tm.transform.position += f.vel * dt;
+                f.tm.transform.rotation = Vista25D.RotacionCartel;
                 f.vel *= 1f - Mathf.Clamp01(dt * 2.2f);
                 float pop = k < 0.15f ? Mathf.Lerp(0.6f, 1.25f, k / 0.15f) : Mathf.Lerp(1.25f, 1f, Mathf.Clamp01((k - 0.15f) / 0.2f));
                 f.tm.transform.localScale = Vector3.one * f.escala * pop;

@@ -62,6 +62,29 @@ namespace TowerDefenseGameplay
         private float temporizadorCura = 0f;
         private enemyMovement movimiento;
 
+        // ── Vista 2.5D ──
+        private Transform cuerpo3D;
+        private Renderer[] renderers3D;
+        private Renderer rEscudo3D;
+        private SpriteRenderer sombra;
+        private float alturaCuerpo3D = 0.5f;   // en unidades locales (antes de la escala del enemigo)
+        private float offsetBarra2D = 0.65f;
+        private float giro3D;
+        private Vector3 posPrevia;
+        private Color tinteActual = new Color(0f, 0f, 0f, -1f);
+        private int versionVista = -1;
+
+        /// <summary>Centro visible del enemigo: a media altura del cuerpo en 2.5D, su posición en 2D.</summary>
+        public Vector3 PuntoImpacto
+        {
+            get
+            {
+                Vector3 p = transform.position;
+                if (!Vista25D.Activa || cuerpo3D == null) return new Vector3(p.x, p.y, 0f);
+                return new Vector3(p.x, p.y, -(Vista25D.ALTURA_CAMINO + alturaCuerpo3D * 0.55f * transform.lossyScale.x));
+            }
+        }
+
         private Transform barraVida;
         private Transform barraEscudo;
         private SpriteRenderer srBarraVida;
@@ -201,6 +224,8 @@ namespace TowerDefenseGameplay
 
             vidaActual = vidaMaxima;
             escudoActual = escudoMaximo;
+            ConstruirCuerpo3D();
+            AplicarModoVista();
             ActualizarBarraVida();
         }
 
@@ -213,6 +238,7 @@ namespace TowerDefenseGameplay
         {
             if (estaMuerto) return;
             float dt = Time.deltaTime;
+            if (versionVista != Vista25D.Version) AplicarModoVista();
 
             if (congeladoRestante > 0f) congeladoRestante -= dt;
 
@@ -245,6 +271,8 @@ namespace TowerDefenseGameplay
                     EmitirPulsoCurativo();
                 }
             }
+
+            if (Vista25D.Activa && cuerpo3D != null) AnimarCuerpo3D(dt);
         }
 
         private void EmitirPulsoCurativo()
@@ -367,6 +395,171 @@ namespace TowerDefenseGameplay
             Destroy(gameObject);
         }
 
+        #region Vista 2.5D (cuerpo 3D por arquetipo)
+
+        private void AplicarModoVista()
+        {
+            versionVista = Vista25D.Version;
+            bool v3 = Vista25D.Activa && cuerpo3D != null;
+            if (spriteRenderer != null) spriteRenderer.enabled = !v3;
+            if (cuerpo3D != null) cuerpo3D.gameObject.SetActive(v3);
+            if (sombra != null) sombra.enabled = v3;
+
+            if (contenedorBarraVida != null)
+            {
+                Transform barra = contenedorBarraVida.transform;
+                if (v3)
+                {
+                    float escala = Mathf.Max(0.01f, transform.lossyScale.x);
+                    barra.localPosition = new Vector3(0f, 0f, -(Vista25D.ALTURA_CAMINO / escala + alturaCuerpo3D + 0.3f));
+                }
+                else
+                {
+                    barra.localPosition = new Vector3(0f, offsetBarra2D, 0f);
+                    barra.rotation = Quaternion.identity;
+                }
+            }
+        }
+
+        private Material Mat(Color c, Color emision = default, bool transparente = false) => Recursos25D.MaterialColor(c, emision, transparente);
+
+        /// <summary>
+        /// Cuerpo hecho con primitivas (el kit Kenney no trae personajes). Cada arquetipo tiene una
+        /// silueta distinta además del color, igual que en los sprites 2D.
+        /// </summary>
+        private void ConstruirCuerpo3D()
+        {
+            if (cuerpo3D != null) Destroy(cuerpo3D.gameObject);
+
+            GameObject go = new GameObject("Cuerpo3D");
+            go.transform.SetParent(transform, false);
+            cuerpo3D = go.transform;
+            cuerpo3D.localScale = Vector3.one;
+            cuerpo3D.rotation = Quaternion.Euler(0f, 0f, giro3D) * Recursos25D.RotModelo;
+
+            Color c = SpritesEnemigos.ColorPrincipal(tipoEnemigo);
+            Color oscuro = c * 0.55f; oscuro.a = 1f;
+            bool furtivo = EsFurtivo;
+            Material mCuerpo = Mat(furtivo ? new Color(c.r, c.g, c.b, 0.5f) : c, default, furtivo);
+            Material mOscuro = Mat(furtivo ? new Color(oscuro.r, oscuro.g, oscuro.b, 0.5f) : oscuro, default, furtivo);
+            Material mBrillo = Mat(Color.Lerp(c, Color.white, 0.5f), c * 0.6f);
+            Transform r = cuerpo3D;
+
+            switch (tipoEnemigo)
+            {
+                case TipoEnemigo.Corredor:
+                    Recursos25D.Primitiva(PrimitiveType.Sphere, r, new Vector3(0f, 0.24f, 0f), new Vector3(0.42f, 0.3f, 0.52f), mCuerpo);
+                    Recursos25D.Primitiva(PrimitiveType.Cube, r, new Vector3(0f, 0.27f, 0.26f), Vector3.one * 0.15f, mBrillo, new Vector3(45f, 0f, 45f));
+                    Recursos25D.Primitiva(PrimitiveType.Cube, r, new Vector3(0f, 0.36f, -0.12f), new Vector3(0.06f, 0.16f, 0.18f), mOscuro, new Vector3(-25f, 0f, 0f));
+                    alturaCuerpo3D = 0.45f;
+                    break;
+                case TipoEnemigo.Infanteria:
+                    Recursos25D.Primitiva(PrimitiveType.Capsule, r, new Vector3(0f, 0.26f, 0f), new Vector3(0.36f, 0.26f, 0.36f), mCuerpo);
+                    Recursos25D.Primitiva(PrimitiveType.Sphere, r, new Vector3(0f, 0.55f, 0f), Vector3.one * 0.3f, mOscuro);
+                    Recursos25D.Primitiva(PrimitiveType.Cube, r, new Vector3(0f, 0.55f, 0.12f), new Vector3(0.2f, 0.06f, 0.08f), mBrillo);
+                    alturaCuerpo3D = 0.7f;
+                    break;
+                case TipoEnemigo.Blindado:
+                    Recursos25D.Primitiva(PrimitiveType.Cube, r, new Vector3(0f, 0.18f, 0f), new Vector3(0.55f, 0.3f, 0.62f), mCuerpo);
+                    Recursos25D.Primitiva(PrimitiveType.Cube, r, new Vector3(0f, 0.4f, -0.04f), new Vector3(0.32f, 0.15f, 0.3f), mOscuro);
+                    Recursos25D.Primitiva(PrimitiveType.Cube, r, new Vector3(0f, 0.2f, 0.32f), new Vector3(0.46f, 0.18f, 0.05f), mBrillo);
+                    alturaCuerpo3D = 0.5f;
+                    break;
+                case TipoEnemigo.Jefe:
+                    Recursos25D.Primitiva(PrimitiveType.Sphere, r, new Vector3(0f, 0.34f, 0f), Vector3.one * 0.62f, mCuerpo);
+                    for (int i = 0; i < 6; i++)
+                    {
+                        float a = i * 60f;
+                        float rad = a * Mathf.Deg2Rad;
+                        Recursos25D.Primitiva(PrimitiveType.Cube, r, new Vector3(Mathf.Sin(rad) * 0.2f, 0.66f, Mathf.Cos(rad) * 0.2f),
+                            new Vector3(0.07f, 0.2f, 0.07f), mOscuro, new Vector3(25f * Mathf.Cos(rad), a, -25f * Mathf.Sin(rad)));
+                    }
+                    Recursos25D.Primitiva(PrimitiveType.Sphere, r, new Vector3(0f, 0.36f, 0.27f), Vector3.one * 0.16f, Mat(new Color(1f, 0.85f, 0.4f), new Color(1f, 0.55f, 0.1f)));
+                    alturaCuerpo3D = 0.78f;
+                    break;
+                case TipoEnemigo.Sanador:
+                    Recursos25D.Primitiva(PrimitiveType.Cylinder, r, new Vector3(0f, 0.17f, 0f), new Vector3(0.42f, 0.17f, 0.42f), mCuerpo);
+                    Material mCruz = Mat(Color.white, new Color(0.35f, 0.6f, 0.5f));
+                    Recursos25D.Primitiva(PrimitiveType.Cube, r, new Vector3(0f, 0.4f, 0f), new Vector3(0.32f, 0.06f, 0.1f), mCruz);
+                    Recursos25D.Primitiva(PrimitiveType.Cube, r, new Vector3(0f, 0.4f, 0f), new Vector3(0.1f, 0.06f, 0.32f), mCruz);
+                    alturaCuerpo3D = 0.45f;
+                    break;
+                case TipoEnemigo.VelozFurtivo:
+                    Recursos25D.Primitiva(PrimitiveType.Cube, r, new Vector3(0f, 0.16f, 0f), new Vector3(0.24f, 0.12f, 0.56f), mCuerpo);
+                    Recursos25D.Primitiva(PrimitiveType.Cube, r, new Vector3(0f, 0.17f, -0.12f), new Vector3(0.5f, 0.03f, 0.2f), mOscuro);
+                    Recursos25D.Primitiva(PrimitiveType.Cube, r, new Vector3(0f, 0.18f, 0.24f), new Vector3(0.1f, 0.08f, 0.12f), mBrillo, new Vector3(0f, 45f, 0f));
+                    alturaCuerpo3D = 0.3f;
+                    break;
+                default: // BlindadoPesado
+                    Recursos25D.Primitiva(PrimitiveType.Cube, r, new Vector3(0f, 0.23f, 0f), new Vector3(0.62f, 0.4f, 0.66f), mCuerpo);
+                    Recursos25D.Primitiva(PrimitiveType.Cube, r, new Vector3(0.36f, 0.38f, 0f), new Vector3(0.12f, 0.16f, 0.4f), mOscuro);
+                    Recursos25D.Primitiva(PrimitiveType.Cube, r, new Vector3(-0.36f, 0.38f, 0f), new Vector3(0.12f, 0.16f, 0.4f), mOscuro);
+                    Recursos25D.Primitiva(PrimitiveType.Sphere, r, new Vector3(0f, 0.28f, 0.33f), Vector3.one * 0.15f, Mat(new Color(0.4f, 0.95f, 1f), new Color(0.2f, 0.7f, 0.85f)));
+                    alturaCuerpo3D = 0.5f;
+                    break;
+            }
+
+            renderers3D = cuerpo3D.GetComponentsInChildren<Renderer>(true);
+
+            // Burbuja de escudo (Blindado Pesado): se oculta cuando el escudo se rompe
+            rEscudo3D = null;
+            if (escudoMaximo > 0f)
+            {
+                rEscudo3D = Recursos25D.Primitiva(PrimitiveType.Sphere, cuerpo3D, new Vector3(0f, 0.28f, 0f), Vector3.one * 0.95f,
+                    Mat(new Color(0.3f, 0.9f, 1f, 0.22f), new Color(0.05f, 0.25f, 0.3f), true)).GetComponent<Renderer>();
+                rEscudo3D.sortingOrder = 6;
+            }
+
+            // Sombra suave sobre el camino
+            if (sombra == null)
+            {
+                sombra = GraficosProc.CrearSprite(transform, "Sombra3D", GraficosProc.Brillo, new Color(0f, 0f, 0f, 0.45f), 2, 0.9f);
+            }
+            float esc = Mathf.Max(0.01f, transform.lossyScale.x);
+            sombra.transform.localPosition = new Vector3(0f, 0f, -(Vista25D.ALTURA_CAMINO + 0.003f) / esc);
+            cuerpo3D.localPosition = new Vector3(0f, 0f, -Vista25D.ALTURA_CAMINO / esc);
+            tinteActual = new Color(0f, 0f, 0f, -1f);
+            posPrevia = transform.position;
+        }
+
+        private void AnimarCuerpo3D(float dt)
+        {
+            // Mirar hacia donde camina
+            Vector3 d = transform.position - posPrevia;
+            posPrevia = transform.position;
+            if (d.sqrMagnitude > 0.000001f)
+            {
+                float objetivo = Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg - 90f;
+                giro3D = Mathf.MoveTowardsAngle(giro3D, objetivo, 540f * dt);
+            }
+            cuerpo3D.rotation = Quaternion.Euler(0f, 0f, giro3D) * Recursos25D.RotModelo;
+
+            // Saltito al caminar (no cuando está congelado)
+            float esc = Mathf.Max(0.01f, transform.lossyScale.x);
+            float salto = 0f;
+            if (congeladoRestante <= 0f && (tipoEnemigo == TipoEnemigo.Corredor || tipoEnemigo == TipoEnemigo.Infanteria || tipoEnemigo == TipoEnemigo.Sanador))
+                salto = Mathf.Abs(Mathf.Sin(Time.time * (tipoEnemigo == TipoEnemigo.Corredor ? 14f : 9f) + GetInstanceID())) * 0.06f;
+            cuerpo3D.localPosition = new Vector3(0f, 0f, -(Vista25D.ALTURA_CAMINO / esc + salto));
+
+            if (rEscudo3D != null) rEscudo3D.enabled = escudoActual > 0f;
+
+            // Tinte: destello de daño > congelado > ralentizado
+            Color tinte;
+            if (flashRestante > 0f) tinte = new Color(colorFlash.r, colorFlash.g, colorFlash.b, 0.65f);
+            else if (congeladoRestante > 0f) tinte = new Color(0.1f, 0.95f, 1f, 0.55f);
+            else if (tiempoRalentizacionRestante > 0f) tinte = new Color(colorFrio.r, colorFrio.g, colorFrio.b, 0.35f);
+            else tinte = new Color(0f, 0f, 0f, 0f);
+            if (tinte != tinteActual)
+            {
+                tinteActual = tinte;
+                Recursos25D.Tenir(renderers3D, tinte);
+            }
+
+            if (contenedorBarraVida != null) contenedorBarraVida.transform.rotation = Vista25D.RotacionCartel;
+        }
+
+        #endregion
+
         #region Barra de Vida y Escudo
 
         private void AjustarBarra(float ancho, float alto, float offsetY)
@@ -375,6 +568,7 @@ namespace TowerDefenseGameplay
             altoBarra = alto;
             if (contenedorBarraVida != null)
             {
+                offsetBarra2D = offsetY;
                 contenedorBarraVida.transform.localPosition = new Vector3(0, offsetY, 0);
                 Transform fondo = contenedorBarraVida.transform.Find("Fondo");
                 if (fondo != null) fondo.localScale = new Vector3(ancho + 0.04f, alto + 0.04f, 1f);

@@ -78,6 +78,20 @@ namespace TowerDefenseGameplay
         private float temporizadorRadar = 0f;
         private bool visualesListos = false;
 
+        // ── Vista 2.5D ──
+        private Transform raiz3D;      // cuerpo de la torre (modelo Kenney según tipo y nivel)
+        private Transform arma3D;      // cabezal que gira hacia el objetivo
+        private Transform canon3D;     // pieza que retrocede al disparar
+        private Transform giro3D;      // pieza decorativa animada (cristal, orbe)
+        private Vector3 posCanon3D;
+        private Vector3 punta3D;       // boca del arma en espacio local del cabezal
+        private float alturaCuerpo3D;
+        private float anguloRadar;
+        private int versionVista = -1;
+
+        /// <summary>Altura del cabezal en la vista 2.5D (0 en 2D). Se usa para los rayos de la red MST.</summary>
+        public float AlturaVisual => Vista25D.Activa && arma3D != null ? Vista25D.ALTURA_PAD + alturaCuerpo3D + 0.15f : 0f;
+
         public bool EsRadar => tipo == TipoTorre.Radar;
         public string NombreCorto => Sigla(tipo) + idTorre;
         public Enemigo ObjetivoActual => objetivoActual;
@@ -372,6 +386,7 @@ namespace TowerDefenseGameplay
         private void Update()
         {
             float dt = Time.deltaTime;
+            if (versionVista != Vista25D.Version) AplicarModoVista();
             AnimarVisuales(dt);
 
             if (EsRadar)
@@ -467,9 +482,17 @@ namespace TowerDefenseGameplay
             Vector2 dir = (objetivoActual.transform.position - transform.position).normalized;
             float angulo = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg - 90f;
             canonRotatorio.rotation = Quaternion.Euler(0, 0, angulo);
+            if (arma3D != null) arma3D.rotation = Quaternion.Euler(0, 0, angulo) * Recursos25D.RotModelo;
         }
 
-        private Vector3 PuntaCanon => canonRotatorio != null ? canonRotatorio.position + canonRotatorio.up * 0.5f : transform.position;
+        private Vector3 PuntaCanon
+        {
+            get
+            {
+                if (Vista25D.Activa && arma3D != null) return arma3D.TransformPoint(punta3D);
+                return canonRotatorio != null ? canonRotatorio.position + canonRotatorio.up * 0.5f : transform.position;
+            }
+        }
 
         private float CalcularDanio(out bool critico)
         {
@@ -526,7 +549,7 @@ namespace TowerDefenseGameplay
             {
                 hazLaser.enabled = true;
                 hazLaser.SetPosition(0, PuntaCanon);
-                hazLaser.SetPosition(1, objetivoActual.transform.position);
+                hazLaser.SetPosition(1, objetivoActual.PuntoImpacto);
                 float ancho = 0.05f + 0.05f * (rampa - 1f) + 0.015f * Mathf.Sin(Time.time * 40f);
                 hazLaser.startWidth = ancho;
                 hazLaser.endWidth = ancho * 0.7f;
@@ -574,7 +597,7 @@ namespace TowerDefenseGameplay
                 Enemigo actual = cola.Dequeue();
                 if (actual == null || actual.EstaMuerto) continue;
 
-                Vector3 posActual = actual.transform.position;
+                Vector3 posActual = actual.PuntoImpacto;
                 int prof = profundidad[actual];
                 if (fx != null) fx.Rayo(origen[actual], posActual, ColorTipo(TipoTorre.Tesla), 0.16f, 0.07f);
 
@@ -611,6 +634,179 @@ namespace TowerDefenseGameplay
                 temporizadorRadar = 2.2f;
                 if (EfectosVisualesManager.Instance != null)
                     EfectosVisualesManager.Instance.OndaExpansiva(transform.position, 1.4f + 0.2f * nivel, new Color(0.3f, 1f, 0.6f, 0.55f), 0.9f);
+            }
+        }
+
+        #endregion
+
+        #region Vista 2.5D (modelos Kenney + cabezal por tipo)
+
+        /// <summary>Muestra los sprites 2D o el modelo 3D según la vista activa.</summary>
+        private void AplicarModoVista()
+        {
+            versionVista = Vista25D.Version;
+            bool v3 = Vista25D.Activa;
+            if (!visualesListos) return;
+
+            srBase.enabled = !v3;
+            srAnillo.enabled = !v3;
+            srCanon.enabled = !v3;
+            for (int i = 0; i < pips.Count; i++) pips[i].enabled = !v3 && i < nivel;
+            srAnilloElite.enabled = !v3 && nivel >= NIVEL_MAXIMO;
+
+            // El brillo de red y el anillo de propietario quedan sobre la plataforma en 2.5D
+            float zSuelo = v3 ? -(Vista25D.ALTURA_PAD + 0.005f) / Mathf.Max(0.01f, transform.lossyScale.z) : 0f;
+            srBrilloRed.transform.localPosition = new Vector3(0f, 0f, zSuelo);
+            srPropietario.transform.localPosition = new Vector3(0f, 0f, zSuelo);
+
+            if (raiz3D != null) raiz3D.gameObject.SetActive(v3);
+            if (arma3D != null) arma3D.gameObject.SetActive(v3);
+            if (hazLaser != null) hazLaser.enabled = false;
+        }
+
+        private Material Mat(Color c, Color emision = default) => Recursos25D.MaterialColor(c, emision);
+
+        /// <summary>
+        /// Torre 3D: cuerpo del kit que crece con el nivel (piedra → almenas → torre pintada con anillo
+        /// dorado) y un cabezal con silueta propia por tipo, así se distinguen también sin color.
+        /// </summary>
+        private void ConstruirVisuales3D()
+        {
+            if (raiz3D != null) Destroy(raiz3D.gameObject);
+            if (arma3D != null) Destroy(arma3D.gameObject);
+            canon3D = null;
+            giro3D = null;
+
+            Color acento = ColorTipo(tipo);
+            Color piedra = new Color(0.55f, 0.55f, 0.58f);
+
+            // ── Cuerpo ──
+            raiz3D = Recursos25D.CrearRaizModelo(transform, "Torre3D");
+            raiz3D.position = new Vector3(transform.position.x, transform.position.y, -Vista25D.ALTURA_PAD);
+
+            float ancho = 0.56f;
+            float alto = nivel == 1 ? 0.5f : (nivel == 2 ? 0.66f : 0.8f);
+            if (tipo == TipoTorre.Radar)
+            {
+                // Atalaya de madera
+                Recursos25D.ModeloOCilindro("structure-poles", raiz3D, Vector3.zero, new Vector3(0.6f, alto, 0.6f), 0.55f, alto, new Color(0.5f, 0.35f, 0.2f));
+                Recursos25D.CrearModelo("wood-floor", raiz3D, new Vector3(0f, alto, 0f), new Vector3(0.66f, 0.5f, 0.66f));
+                alturaCuerpo3D = alto + 0.06f;
+            }
+            else
+            {
+                string cuerpo = nivel >= 3 || tipo == TipoTorre.Hielo || tipo == TipoTorre.Laser ? "tower-paint-base" : "tower-base";
+                Recursos25D.ModeloOCilindro(cuerpo, raiz3D, Vector3.zero, new Vector3(ancho, alto, ancho), ancho, alto, piedra);
+                alturaCuerpo3D = alto;
+                if (nivel >= 2)
+                {
+                    Recursos25D.CrearModelo("tower-top", raiz3D, new Vector3(0f, alto, 0f), new Vector3(ancho, ancho, ancho));
+                }
+            }
+
+            // Franja de color del tipo (identificación rápida) y anillo dorado de élite
+            Recursos25D.Primitiva(PrimitiveType.Cylinder, raiz3D, new Vector3(0f, alto * 0.62f, 0f),
+                new Vector3(ancho * 1.04f, 0.035f, ancho * 1.04f), Mat(acento, acento * 0.35f));
+            if (nivel >= NIVEL_MAXIMO)
+            {
+                Recursos25D.Primitiva(PrimitiveType.Cylinder, raiz3D, new Vector3(0f, alto * 0.3f, 0f),
+                    new Vector3(ancho * 1.06f, 0.03f, ancho * 1.06f), Mat(Paleta.Dorado, Paleta.Dorado * 0.4f));
+            }
+
+            // ── Cabezal ──
+            GameObject goArma = new GameObject("Cabezal3D");
+            goArma.transform.SetParent(transform, false);
+            arma3D = goArma.transform;
+            float s = transform.lossyScale.x;
+            arma3D.localScale = Mathf.Abs(s) > 0.0001f ? Vector3.one / s : Vector3.one;
+            arma3D.position = new Vector3(transform.position.x, transform.position.y, -(Vista25D.ALTURA_PAD + alturaCuerpo3D));
+            arma3D.rotation = canonRotatorio != null ? canonRotatorio.rotation * Recursos25D.RotModelo : Recursos25D.RotModelo;
+
+            float escalaArma = 1f + 0.12f * (nivel - 1);
+            Color metal = new Color(0.22f, 0.24f, 0.29f);
+            Material mMetal = Mat(metal);
+            Material mAcento = Mat(acento, acento * 0.45f);
+            Material mBrillo = Mat(Color.Lerp(acento, Color.white, 0.35f), acento * 0.9f);
+
+            Transform pie = Recursos25D.Primitiva(PrimitiveType.Cylinder, arma3D, new Vector3(0f, 0.035f, 0f), new Vector3(0.32f, 0.035f, 0.32f) * escalaArma, mMetal);
+            Recursos25D.Primitiva(PrimitiveType.Cylinder, arma3D, new Vector3(0f, 0.075f, 0f), new Vector3(0.34f, 0.012f, 0.34f) * escalaArma, mAcento);
+
+            switch (tipo)
+            {
+                case TipoTorre.Basica:
+                    Recursos25D.Primitiva(PrimitiveType.Cube, arma3D, new Vector3(0f, 0.16f, 0f), new Vector3(0.22f, 0.15f, 0.24f) * escalaArma, mMetal);
+                    canon3D = Recursos25D.Primitiva(PrimitiveType.Cylinder, arma3D, new Vector3(0f, 0.17f, 0.2f) * escalaArma,
+                        new Vector3(0.08f, 0.17f, 0.08f) * escalaArma, Mat(new Color(0.15f, 0.16f, 0.2f)), new Vector3(90f, 0f, 0f));
+                    punta3D = new Vector3(0f, 0.17f, 0.38f) * escalaArma;
+                    break;
+
+                case TipoTorre.Hielo:
+                    giro3D = Recursos25D.Primitiva(PrimitiveType.Cube, arma3D, new Vector3(0f, 0.3f, 0f), Vector3.one * 0.2f * escalaArma,
+                        Mat(new Color(0.55f, 0.95f, 1f), new Color(0.15f, 0.5f, 0.6f)), new Vector3(45f, 0f, 45f));
+                    for (int i = 0; i < 3; i++)
+                    {
+                        float a = i * 120f * Mathf.Deg2Rad;
+                        Recursos25D.Primitiva(PrimitiveType.Cube, giro3D, new Vector3(Mathf.Cos(a), 0.2f, Mathf.Sin(a)) * 0.9f,
+                            Vector3.one * 0.3f, mBrillo, new Vector3(30f, i * 40f, 0f));
+                    }
+                    punta3D = new Vector3(0f, 0.3f, 0f) * escalaArma;
+                    break;
+
+                case TipoTorre.Canon:
+                    Recursos25D.Primitiva(PrimitiveType.Sphere, arma3D, new Vector3(0f, 0.17f, 0f), Vector3.one * 0.3f * escalaArma, Mat(new Color(0.55f, 0.36f, 0.18f)));
+                    canon3D = Recursos25D.Primitiva(PrimitiveType.Cylinder, arma3D, new Vector3(0f, 0.18f, 0.17f) * escalaArma,
+                        new Vector3(0.15f, 0.15f, 0.15f) * escalaArma, Mat(new Color(0.3f, 0.22f, 0.14f)), new Vector3(90f, 0f, 0f));
+                    punta3D = new Vector3(0f, 0.18f, 0.33f) * escalaArma;
+                    break;
+
+                case TipoTorre.Laser:
+                    Recursos25D.Primitiva(PrimitiveType.Cube, arma3D, new Vector3(0f, 0.15f, 0f), new Vector3(0.16f, 0.13f, 0.2f) * escalaArma, Mat(new Color(0.25f, 0.12f, 0.32f)));
+                    canon3D = Recursos25D.Primitiva(PrimitiveType.Cylinder, arma3D, new Vector3(0f, 0.16f, 0.22f) * escalaArma,
+                        new Vector3(0.05f, 0.2f, 0.05f) * escalaArma, mMetal, new Vector3(90f, 0f, 0f));
+                    Recursos25D.Primitiva(PrimitiveType.Sphere, canon3D, new Vector3(0f, 1.05f, 0f), new Vector3(1.8f, 0.45f, 1.8f), mBrillo);
+                    punta3D = new Vector3(0f, 0.16f, 0.44f) * escalaArma;
+                    break;
+
+                case TipoTorre.Tesla:
+                    Recursos25D.Primitiva(PrimitiveType.Cylinder, arma3D, new Vector3(0f, 0.2f, 0f), new Vector3(0.06f, 0.13f, 0.06f) * escalaArma, mMetal);
+                    Recursos25D.Primitiva(PrimitiveType.Cylinder, arma3D, new Vector3(0f, 0.2f, 0f), new Vector3(0.28f, 0.008f, 0.28f) * escalaArma, mAcento);
+                    Recursos25D.Primitiva(PrimitiveType.Cylinder, arma3D, new Vector3(0f, 0.27f, 0f), new Vector3(0.22f, 0.008f, 0.22f) * escalaArma, mAcento);
+                    giro3D = Recursos25D.Primitiva(PrimitiveType.Sphere, arma3D, new Vector3(0f, 0.4f, 0f) * escalaArma, Vector3.one * 0.22f * escalaArma, mBrillo);
+                    punta3D = new Vector3(0f, 0.4f, 0f) * escalaArma;
+                    break;
+
+                default: // Radar
+                    Recursos25D.Primitiva(PrimitiveType.Cylinder, arma3D, new Vector3(0f, 0.14f, 0f), new Vector3(0.05f, 0.1f, 0.05f) * escalaArma, mMetal);
+                    Recursos25D.Primitiva(PrimitiveType.Cylinder, arma3D, new Vector3(0f, 0.3f, 0.03f) * escalaArma,
+                        new Vector3(0.42f, 0.015f, 0.42f) * escalaArma, Mat(new Color(0.75f, 0.8f, 0.85f)), new Vector3(60f, 0f, 0f));
+                    giro3D = Recursos25D.Primitiva(PrimitiveType.Sphere, arma3D, new Vector3(0f, 0.36f, 0.16f) * escalaArma, Vector3.one * 0.07f * escalaArma, mBrillo);
+                    punta3D = new Vector3(0f, 0.3f, 0f) * escalaArma;
+                    break;
+            }
+
+            if (canon3D != null) posCanon3D = canon3D.localPosition;
+            if (pie != null) pie.name = "Pie";
+        }
+
+        private void AnimarVisuales3D(float dt)
+        {
+            float t = Time.time + idTorre * 0.7f;
+            if (tipo == TipoTorre.Radar && arma3D != null)
+            {
+                anguloRadar -= 120f * dt;
+                arma3D.rotation = Quaternion.Euler(0f, 0f, anguloRadar) * Recursos25D.RotModelo;
+                if (giro3D != null) giro3D.gameObject.SetActive(Mathf.Repeat(t, 1.2f) < 0.6f);
+            }
+            else if (tipo == TipoTorre.Hielo && giro3D != null)
+            {
+                float e = 1f + 0.12f * (nivel - 1);
+                giro3D.localPosition = new Vector3(0f, (0.3f + 0.03f * Mathf.Sin(t * 2.4f)) * e, 0f);
+                giro3D.localRotation = Quaternion.Euler(0f, t * 70f, 0f) * Quaternion.Euler(45f, 0f, 45f);
+            }
+            else if (tipo == TipoTorre.Tesla && giro3D != null)
+            {
+                float e = (0.22f + 0.03f * Mathf.Sin(t * 9f)) * (1f + 0.12f * (nivel - 1));
+                giro3D.localScale = Vector3.one * e;
             }
         }
 
@@ -723,6 +919,8 @@ namespace TowerDefenseGameplay
                 srPropietario.color = colorPropietario;
             }
             RefrescarIndicadores();
+            ConstruirVisuales3D();
+            AplicarModoVista();
         }
 
         private void AnimarVisuales(float dt)
@@ -731,7 +929,10 @@ namespace TowerDefenseGameplay
             {
                 retroceso = Mathf.Max(0f, retroceso - dt * 0.9f);
                 if (barril != null) barril.localPosition = posBarril - Vector3.up * retroceso;
+                if (canon3D != null) canon3D.localPosition = posCanon3D - Vector3.forward * retroceso;
             }
+
+            if (Vista25D.Activa) AnimarVisuales3D(dt);
 
             if (tipo == TipoTorre.Radar && canonRotatorio != null)
             {

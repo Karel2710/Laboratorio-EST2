@@ -20,6 +20,7 @@ namespace TowerDefenseGameplay
         private SpriteRenderer srNucleo, srDomo, srVidaBase;
         private LineRenderer anilloVida;
         private PathGraph suscrito;
+        private int versionVista = -1;
 
         public static AmbientacionMapa2D Asegurar()
         {
@@ -49,7 +50,9 @@ namespace TowerDefenseGameplay
         {
             Camera cam = Camera.main != null ? Camera.main : FindFirstObjectByType<Camera>();
             float alto = cam != null && cam.orthographic ? cam.orthographicSize * 2f + 2f : 14f;
-            float ancho = alto * 2.2f;
+            // Más grande que la vista 2D para cubrir también el horizonte de la vista 2.5D
+            alto = Mathf.Max(alto, 34f);
+            float ancho = Mathf.Max(alto * 2.2f, 70f);
             if (cam != null) cam.backgroundColor = new Color(0.03f, 0.05f, 0.09f);
 
             // El arte original del mapa queda al fondo y se tiñe con un velo oscuro azulado
@@ -192,6 +195,18 @@ namespace TowerDefenseGameplay
                 if (g != null) g.OnGrafoCambiado += ReconstruirCaminos;
                 ReconstruirCaminos();
             }
+
+            // En 2.5D los caminos, el portal y la base 2D los reemplaza Escenario25D
+            if (versionVista != Vista25D.Version)
+            {
+                versionVista = Vista25D.Version;
+                bool v2 = !Vista25D.Activa;
+                capaCaminos.gameObject.SetActive(v2);
+                portal.gameObject.SetActive(v2);
+                baseAliada.gameObject.SetActive(v2);
+                if (v2) ColocarPortalYBase();
+            }
+            if (Vista25D.Activa) return;
 
             float t = Time.unscaledTime;
             for (int i = 0; i < anillosPortal.Count; i++)

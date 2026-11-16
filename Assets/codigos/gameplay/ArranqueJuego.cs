@@ -48,6 +48,8 @@ namespace TowerDefenseGameplay
             PathGraph.Asegurar();
             RedTorresMST.Asegurar();
             GameManager.Asegurar();
+            Vista25D.Asegurar();
+            Escenario25D.Asegurar();
             AmbientacionMapa2D.Asegurar();
             VisualizadorGrafoRutas.Asegurar();
             GestorRedOnline.Asegurar();

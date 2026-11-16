@@ -36,7 +36,7 @@ namespace TowerDefenseGameplay
             esAreaSplash = splash;
             congelacionTotal = congelar;
 
-            if (objetivo != null) ultimaPosicionConocida = objetivo.transform.position;
+            if (objetivo != null) ultimaPosicionConocida = objetivo.PuntoImpacto;
             else ultimaPosicionConocida = transform.position;
 
             AsegurarVisuales();
@@ -96,7 +96,7 @@ namespace TowerDefenseGameplay
         {
             if (impacto) return;
 
-            if (objetivo != null && !objetivo.EstaMuerto) ultimaPosicionConocida = objetivo.transform.position;
+            if (objetivo != null && !objetivo.EstaMuerto) ultimaPosicionConocida = objetivo.PuntoImpacto;
 
             Vector3 direccion = ultimaPosicionConocida - transform.position;
             float distanciaPaso = velocidad * Time.deltaTime;
@@ -109,7 +109,7 @@ namespace TowerDefenseGameplay
             }
 
             transform.position += direccion.normalized * distanciaPaso;
-            transform.rotation = Quaternion.Euler(0, 0, Mathf.Atan2(direccion.y, direccion.x) * Mathf.Rad2Deg);
+            transform.rotation = Vista25D.Activa ? Vista25D.RotacionCartel : Quaternion.Euler(0, 0, Mathf.Atan2(direccion.y, direccion.x) * Mathf.Rad2Deg);
         }
 
         private void AplicarEfectos(Enemigo e, float danioAplicado, bool critico)

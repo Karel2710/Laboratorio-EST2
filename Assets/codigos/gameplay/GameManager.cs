@@ -479,20 +479,14 @@ namespace TowerDefenseGameplay
             if (cancelar) SeleccionarTorre(null);
 
             // Casilla más cercana al cursor (tolerancia de medio tile)
-            PlotTorre detectado = null;
-            float mejor = 0.55f;
-            List<PlotTorre> plots = PlotTorre.Todos;
-            for (int i = 0; i < plots.Count; i++)
+            PlotTorre detectado = BuscarPlot(punto, false);
+
+            // En 2.5D una torre alta tapa la casilla de atrás: si el cursor está sobre el cuerpo
+            // de una torre (plano a media altura), se prioriza esa torre.
+            if (Vista25D.Activa && EntradaJuego.CursorEnPlano(0.45f, out Vector2 alto))
             {
-                PlotTorre p = plots[i];
-                if (p == null || p.deshabilitado) continue;
-                Vector2 pp = p.transform.position;
-                float d = Mathf.Max(Mathf.Abs(pp.x - punto.x), Mathf.Abs(pp.y - punto.y));
-                if (d < mejor)
-                {
-                    mejor = d;
-                    detectado = p;
-                }
+                PlotTorre conTorre = BuscarPlot(alto, true);
+                if (conTorre != null) detectado = conTorre;
             }
 
             if (detectado != plotBajoCursor)
@@ -536,6 +530,27 @@ namespace TowerDefenseGameplay
                 else if (plotBajoCursor.TieneTorre) SeleccionarTorre(plotBajoCursor.torreInstanciada);
                 else IntentarConstruir(plotBajoCursor);
             }
+        }
+
+        private static PlotTorre BuscarPlot(Vector2 punto, bool soloConTorre)
+        {
+            PlotTorre detectado = null;
+            float mejor = soloConTorre ? 0.45f : 0.55f;
+            List<PlotTorre> plots = PlotTorre.Todos;
+            for (int i = 0; i < plots.Count; i++)
+            {
+                PlotTorre p = plots[i];
+                if (p == null || p.deshabilitado) continue;
+                if (soloConTorre && !p.TieneTorre) continue;
+                Vector2 pp = p.transform.position;
+                float d = Mathf.Max(Mathf.Abs(pp.x - punto.x), Mathf.Abs(pp.y - punto.y));
+                if (d < mejor)
+                {
+                    mejor = d;
+                    detectado = p;
+                }
+            }
+            return detectado;
         }
 
         private void LimpiarHover()
@@ -1286,7 +1301,9 @@ namespace TowerDefenseGameplay
                 destino += (Vector3)(Random.insideUnitCircle * 0.4f);
 
                 GameObject obj = new GameObject("ProyectilOrbital");
-                obj.transform.position = destino + new Vector3(Random.Range(-1.5f, 1.5f), 8f, 0f);
+                obj.transform.position = Vista25D.Activa
+                    ? destino + new Vector3(Random.Range(-1f, 1f), 1.5f, -9f)   // cae desde el cielo
+                    : destino + new Vector3(Random.Range(-1.5f, 1.5f), 8f, 0f);
                 Proyectil p = obj.AddComponent<Proyectil>();
                 p.ConfigurarHaciaPunto(destino, danio, 1.6f);
                 yield return new WaitForSeconds(0.1f);

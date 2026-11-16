@@ -16,7 +16,7 @@ namespace TowerDefenseGameplay
         public static HUDJuego Instance { get; private set; }
 
         private Text txtBaseVida, txtOleadaInfo, txtOro, txtJugadorXP, txtPuntosDAG, txtPuntaje;
-        private Button btnIniciarOleada, btnAuto, btnGrafo, btnDaltonico, btnSonido, btnLab;
+        private Button btnIniciarOleada, btnAuto, btnGrafo, btnDaltonico, btnSonido, btnLab, btnVista;
         private readonly Button[] btnVelocidad = new Button[4];
         private readonly Button[] btnNivel = new Button[3];
         private readonly Dictionary<TipoTorre, Button> btnTorres = new Dictionary<TipoTorre, Button>();
@@ -156,6 +156,8 @@ namespace TowerDefenseGameplay
                 outTorres[tipo].effectDistance = sel ? new Vector2(3, -3) : new Vector2(1, -1);
             }
 
+            UIFabrica.Rotular(btnVista, Vista25D.Activa ? "🧊 2.5D: SÍ" : "🧊 2.5D: NO");
+            UIFabrica.Colorear(btnVista, Vista25D.Activa ? new Color(0.2f, 0.5f, 0.45f) : new Color(0.22f, 0.26f, 0.34f));
             UIFabrica.Colorear(btnDaltonico, Paleta.Daltonico ? new Color(0.15f, 0.45f, 0.75f) : new Color(0.22f, 0.26f, 0.34f));
             UIFabrica.Colorear(btnLab, gm.modoLaboratorio ? new Color(0.6f, 0.3f, 0.7f) : new Color(0.22f, 0.26f, 0.34f));
             if (panelLab != null) panelLab.SetActive(gm.modoLaboratorio);
@@ -316,6 +318,8 @@ namespace TowerDefenseGameplay
             RectTransform espacio2 = UIFabrica.CrearContenedor(barraMenu, "Espacio");
             espacio2.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
 
+            btnVista = BotonBarra(barraMenu, "BtnVista25D", "🧊 2.5D", new Color(0.22f, 0.26f, 0.34f), 96,
+                () => Vista25D.Asegurar().Alternar());
             BotonBarra(barraMenu, "BtnAyuda", "❓ Ayuda", new Color(0.2f, 0.4f, 0.55f), 90, () => panelAyuda.SetActive(!panelAyuda.activeSelf));
             btnDaltonico = BotonBarra(barraMenu, "BtnDaltonico", "👁 Daltonismo", new Color(0.22f, 0.26f, 0.34f), 120, () =>
             {
@@ -597,6 +601,9 @@ namespace TowerDefenseGameplay
                 "<color=#66DDFF><b>CONTROLES</b></color>\n" +
                 "Clic izquierdo: construir / seleccionar · Clic derecho o Esc: cancelar · ⏸ ▶ ⏩: pausa y velocidad · 🔁 Auto: oleadas automáticas\n" +
                 "Nivel 1/2/3: reinicia la partida con otra dificultad y otra topología de caminos.\n\n" +
+                "<color=#66DDFF><b>VISTA 2.5D</b></color>\n" +
+                "🧊 2.5D alterna entre la vista inclinada con modelos 3D (kit Kenney Retro Fantasy, licencia CC0) y la vista 2D cenital. " +
+                "Es solo visual: caminos, grafos, torres y oleadas funcionan igual en ambas.\n\n" +
                 "<color=#66DDFF><b>ACCESIBILIDAD</b></color>\n" +
                 "👁 Daltonismo: cambia verde/rojo por azul/naranja. Cada enemigo tiene una silueta distinta además del color. " +
                 "Todos los avisos sonoros tienen también un mensaje visual en el banner superior. 🔊 silencia el sonido.\n\n" +

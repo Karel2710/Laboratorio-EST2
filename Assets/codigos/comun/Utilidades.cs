@@ -119,12 +119,25 @@ public static class EntradaJuego
     /// <summary>Posición del cursor proyectada al plano 2D del mundo (Z = 0).</summary>
     public static bool CursorEnMundo(out Vector2 punto)
     {
+        return CursorEnPlano(0f, out punto);
+    }
+
+    /// <summary>
+    /// Intersección del rayo del cursor con el plano z = -altura. Funciona con cámara
+    /// ortográfica (vista 2D) y en perspectiva inclinada (vista 2.5D).
+    /// </summary>
+    public static bool CursorEnPlano(float altura, out Vector2 punto)
+    {
         punto = Vector2.zero;
         Camera cam = Camera.main;
         if (cam == null) cam = Object.FindFirstObjectByType<Camera>();
         if (cam == null) return false;
         Vector2 p = PosicionCursor;
-        Vector3 m = cam.ScreenToWorldPoint(new Vector3(p.x, p.y, Mathf.Abs(cam.transform.position.z)));
+        Ray rayo = cam.ScreenPointToRay(new Vector3(p.x, p.y, 0f));
+        if (Mathf.Abs(rayo.direction.z) < 0.00001f) return false;
+        float t = (-altura - rayo.origin.z) / rayo.direction.z;
+        if (t < 0f) return false;
+        Vector3 m = rayo.origin + rayo.direction * t;
         punto = new Vector2(m.x, m.y);
         return true;
     }

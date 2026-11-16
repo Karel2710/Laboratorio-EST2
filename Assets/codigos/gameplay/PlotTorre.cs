@@ -20,6 +20,13 @@ namespace TowerDefenseGameplay
         private SpriteRenderer spriteRenderer;
         private bool resaltado = false;
 
+        // Vista 2.5D: plataforma de piedra del kit Kenney que se tiñe al pasar el cursor
+        private Transform pad3D;
+        private Renderer[] rendPad;
+        private Color tintePad = new Color(0f, 0f, 0f, 0f);
+        private int versionVista = -1;
+        private static readonly Color tinteLibre = new Color(0.55f, 0.82f, 1f, 0.24f);
+
         private static readonly Color colorLibre = new Color(0.45f, 0.85f, 1f, 0.13f);
         private static readonly Color colorOcupado = new Color(0.45f, 0.85f, 1f, 0.05f);
 
@@ -46,20 +53,56 @@ namespace TowerDefenseGameplay
             Todos.Remove(this);
         }
 
+        private void Update()
+        {
+            if (versionVista != Vista25D.Version) AplicarModoVista();
+        }
+
+        private void AplicarModoVista()
+        {
+            versionVista = Vista25D.Version;
+            bool v3 = Vista25D.Activa;
+            if (v3 && pad3D == null) CrearPad();
+            if (pad3D != null) pad3D.gameObject.SetActive(v3);
+            if (spriteRenderer != null) spriteRenderer.enabled = !v3;
+        }
+
+        private void CrearPad()
+        {
+            pad3D = Recursos25D.CrearRaizModelo(transform, "Plataforma3D");
+            // floor mide 1 x 0.05 x 1: se escala al tamaño de la casilla y a ALTURA_PAD de grosor
+            if (Recursos25D.CrearModelo("floor", pad3D, Vector3.zero, new Vector3(0.8f, Vista25D.ALTURA_PAD / 0.05f, 0.8f)) == null)
+            {
+                Recursos25D.Primitiva(PrimitiveType.Cube, pad3D, new Vector3(0f, Vista25D.ALTURA_PAD * 0.5f, 0f),
+                    new Vector3(0.8f, Vista25D.ALTURA_PAD, 0.8f), Recursos25D.MaterialColor(new Color(0.5f, 0.52f, 0.56f)));
+            }
+            rendPad = pad3D.GetComponentsInChildren<Renderer>(true);
+            Recursos25D.Tenir(rendPad, tintePad);
+        }
+
+        private void TenirPad(Color c)
+        {
+            if (c == tintePad) return;
+            tintePad = c;
+            if (rendPad != null) Recursos25D.Tenir(rendPad, c);
+        }
+
         public void ResaltarHover(bool valido)
         {
-            if (spriteRenderer == null) return;
             resaltado = true;
             Color c = valido ? Paleta.Positivo : Paleta.Negativo;
+            TenirPad(new Color(c.r, c.g, c.b, 0.55f));
+            if (spriteRenderer == null) return;
             c.a = 0.5f;
             spriteRenderer.color = c;
         }
 
         public void ResaltarSeleccion()
         {
-            if (spriteRenderer == null) return;
             resaltado = true;
             Color c = Paleta.Dorado;
+            TenirPad(new Color(c.r, c.g, c.b, 0.5f));
+            if (spriteRenderer == null) return;
             c.a = 0.45f;
             spriteRenderer.color = c;
         }
@@ -67,6 +110,7 @@ namespace TowerDefenseGameplay
         public void RestaurarColor()
         {
             resaltado = false;
+            TenirPad(TieneTorre ? new Color(0f, 0f, 0f, 0f) : tinteLibre);
             if (spriteRenderer != null) spriteRenderer.color = TieneTorre ? colorOcupado : colorLibre;
         }
 
@@ -86,7 +130,7 @@ namespace TowerDefenseGameplay
             Torre contenedor = torreObj.AddComponent<Torre>();
             // Compensar la escala de la casilla para que la torre conserve su tamaño de diseño
             Vector3 ls = transform.lossyScale;
-            if (ls.x > 0.01f && ls.y > 0.01f) contenedor.escalaBase = new Vector3(1f / ls.x, 1f / ls.y, 1f);
+            if (ls.x > 0.01f && ls.y > 0.01f) contenedor.escalaBase = new Vector3(1f / ls.x, 1f / ls.y, ls.z > 0.01f ? 1f / ls.z : 1f);
             contenedor.ConfigurarTipo(tipo);
             contenedor.inversionTotal = inversion;
             contenedor.plot = this;

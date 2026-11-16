@@ -256,14 +256,22 @@ namespace GrafosEST2
                 if (activa)
                 {
                     lineas[i].positionCount = 2;
-                    lineas[i].SetPosition(0, aristasMST[i].a.transform.position);
-                    lineas[i].SetPosition(1, aristasMST[i].b.transform.position);
+                    // En 2.5D el rayo une los cabezales de las torres
+                    lineas[i].SetPosition(0, Vista25D.Elevar(aristasMST[i].a.transform.position, aristasMST[i].a.AlturaVisual));
+                    lineas[i].SetPosition(1, Vista25D.Elevar(aristasMST[i].b.transform.position, aristasMST[i].b.AlturaVisual));
                 }
             }
         }
 
+        private int versionVista = -1;
+
         private void Update()
         {
+            if (versionVista != Vista25D.Version)
+            {
+                versionVista = Vista25D.Version;
+                DibujarRed();
+            }
             if (aristasMST.Count == 0) return;
             bool sobrecarga = GameManager.Instance != null && GameManager.Instance.SobrecargaActiva;
             float t = Time.unscaledTime;
