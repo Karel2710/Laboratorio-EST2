@@ -23,6 +23,19 @@ namespace TowerDefenseGameplay
         public const string TD = "KenneyTD/";
         public const string KK = "KayKit/";
 
+        /// <summary>
+        /// Estilo sombrío y frío: paleta del kit editada (colormap_sombrio.png), colores de KayKit
+        /// apagados con la misma fórmula, terreno nevado, luz azulada y neblina.
+        /// En false se usan los colores originales de los kits.
+        /// </summary>
+        public static bool TemaSombrio = true;
+
+        // Luz del tema (valores lineales). Luz directa azulada y ambiente frío y bajo.
+        private static readonly Vector4 luzSombria = new Vector4(0.4f, 0.45f, 0.58f, 1f);
+        private static readonly Vector4 ambienteSombrio = new Vector4(0.2f, 0.24f, 0.33f, 1f);
+        private static readonly Vector4 luzClasica = new Vector4(0.5f, 0.5f, 0.5f, 1f);
+        private static readonly Vector4 ambienteClasico = new Vector4(0.5f, 0.5f, 0.5f, 1f);
+
         private static Shader shader;
         private static bool shaderBuscado;
         private static readonly Dictionary<string, GameObject> prefabs = new Dictionary<string, GameObject>();
@@ -63,6 +76,41 @@ namespace TowerDefenseGameplay
             { "wooddark", new Color(0.429f, 0.376f, 0.359f) }
         };
 
+        /// <summary>
+        /// Fija las variables globales del sombreado: color de la luz, luz ambiente y neblina.
+        /// La neblina oscurece lo que está lejos de la cámara (de <paramref name="inicio"/> a <paramref name="fin"/>).
+        /// </summary>
+        public static void AplicarAmbiente(Color colorNiebla, float inicio, float fin)
+        {
+            Shader.SetGlobalVector("_TD_Luz", TemaSombrio ? luzSombria : luzClasica);
+            Shader.SetGlobalVector("_TD_Ambiente", TemaSombrio ? ambienteSombrio : ambienteClasico);
+            Color n = colorNiebla;
+            n.a = TemaSombrio ? 0.6f : 0f;
+            Shader.SetGlobalColor("_TD_Niebla", n);
+            Shader.SetGlobalVector("_TD_NieblaRango", new Vector4(inicio, Mathf.Max(inicio + 0.1f, fin), 0f, 0f));
+        }
+
+        /// <summary>
+        /// Versión sombría y fría de un color sRGB: menos saturación, tono azulado y más oscuro.
+        /// Es la misma fórmula con la que se generó colormap_sombrio.png a partir de la paleta de Kenney.
+        /// </summary>
+        public static Color Sombrio(Color c)
+        {
+            float l = 0.299f * c.r + 0.587f * c.g + 0.114f * c.b;
+            float r = Mathf.Lerp(l, c.r, 0.55f) * 0.86f * 0.82f;
+            float g = Mathf.Lerp(l, c.g, 0.55f) * 0.94f * 0.82f;
+            float b = Mathf.Lerp(l, c.b, 0.55f) * 1.08f * 0.82f;
+            return new Color(Mathf.Clamp01(r), Mathf.Clamp01(g), Mathf.Clamp01(b), c.a);
+        }
+
+        /// <summary>Variante nevada de una pieza del kit Kenney ("tile" → "snow-tile") si el tema sombrío está activo y existe.</summary>
+        public static string Nieve(string nombre)
+        {
+            if (!TemaSombrio) return TD + nombre;
+            string nevado = TD + "snow-" + nombre;
+            return Resources.Load<GameObject>(nevado) != null ? nevado : TD + nombre;
+        }
+
         /// <summary>Convierte un punto del suelo del juego a coordenadas de espacio de modelo.</summary>
         public static Vector3 AModelo(Vector2 suelo, float altura = 0f) => new Vector3(suelo.x, altura, suelo.y);
 
@@ -84,6 +132,8 @@ namespace TowerDefenseGameplay
                     }
                     if (shader == null) shader = Shader.Find("Unlit/Texture");
                     if (shader == null) shader = Shader.Find("Sprites/Default");
+                    // Valores por defecto de las globales (la neblina la ajusta Vista25D al encuadrar)
+                    AplicarAmbiente(Vista25D.COLOR_FONDO, 1000f, 1001f);
                 }
                 return shader;
             }
@@ -137,7 +187,8 @@ namespace TowerDefenseGameplay
         {
             if (colormapBuscado) return texColormap;
             colormapBuscado = true;
-            texColormap = Resources.Load<Texture2D>(TD + "Textures/colormap");
+            if (TemaSombrio) texColormap = Resources.Load<Texture2D>(TD + "Textures/colormap_sombrio");
+            if (texColormap == null) texColormap = Resources.Load<Texture2D>(TD + "Textures/colormap");
             if (texColormap != null)
             {
                 texColormap.filterMode = FilterMode.Point;      // cada pieza toma colores planos de la paleta
@@ -169,7 +220,7 @@ namespace TowerDefenseGameplay
             }
             else if (coloresKayKit.TryGetValue(clave, out Color c))
             {
-                color = c;
+                color = TemaSombrio ? Sombrio(c) : c;
             }
 
             // Respaldo: lo que traiga el material importado

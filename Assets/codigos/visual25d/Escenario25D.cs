@@ -9,6 +9,8 @@ namespace TowerDefenseGameplay
     /// aristas del grafo (tierra = ruta principal, arena = sendero, agua = pantano), barricadas de
     /// cajas sobre aristas bloqueadas, castillo aliado en la base, puerta-portal en el punto de
     /// aparición y decoración (árboles, rocas, cristales) en las zonas libres.
+    /// Con el tema sombrío (Recursos25D.TemaSombrio) el terreno es nevado, cae nieve y las
+    /// antorchas dan un resplandor cálido que contrasta con la luz fría.
     /// </summary>
     public class Escenario25D : MonoBehaviour
     {
@@ -30,6 +32,8 @@ namespace TowerDefenseGameplay
         private Renderer rDomo;
         private LineRenderer anilloVida;
         private float alturaNucleo = 1.4f;
+        private readonly List<SpriteRenderer> resplandores = new List<SpriteRenderer>();
+        private ParticleSystem nieve;
 
         private PathGraph suscrito;
         private int versionVista = -1;
@@ -61,6 +65,7 @@ namespace TowerDefenseGameplay
             anilloVida = GraficosProc.CrearLinea(contenido, "AnilloVidaBase", Paleta.Positivo, Paleta.Positivo, 0.07f, 4);
             ConstruirCastillo();
             ConstruirPortal();
+            if (Recursos25D.TemaSombrio) CrearNieve();
         }
 
         private Transform Hijo(string nombre)
@@ -164,8 +169,10 @@ namespace TowerDefenseGameplay
             }
         }
 
-        // Tinte arenoso para los senderos (alternativas más lentas)
-        private static readonly Color tinteSendero = new Color(0.93f, 0.8f, 0.52f, 0.5f);
+        // Tinte de los senderos (alternativas más lentas): arena en el tema clásico, hielo pisado en el sombrío
+        private static Color TinteSendero => Recursos25D.TemaSombrio ? new Color(0.6f, 0.68f, 0.8f, 0.5f) : new Color(0.93f, 0.8f, 0.52f, 0.5f);
+        // Ruta principal en el tema sombrío: barro helado, más oscuro que la nieve
+        private static Color? TinteCamino => Recursos25D.TemaSombrio ? new Color(0.16f, 0.14f, 0.17f, 0.32f) : (Color?)null;
 
         /// <summary>
         /// Losa de tierra a lo largo de la arista, alargada medio ancho en cada extremo para que las
@@ -187,17 +194,19 @@ namespace TowerDefenseGameplay
                 case TipoTerreno.Pantano:
                 {
                     // Orilla de tierra y agua un poco hundida
-                    Losa(centro, ANCHO_PANTANO + 0.12f, largo, h - 0.008f, giro, null);
-                    Material agua = Recursos25D.MaterialColor(new Color(0.42f, 0.74f, 0.93f), new Color(0.04f, 0.1f, 0.16f));
+                    Losa(centro, ANCHO_PANTANO + 0.12f, largo, h - 0.008f, giro, TinteCamino);
+                    Material agua = Recursos25D.TemaSombrio
+                        ? Recursos25D.MaterialColor(new Color(0.26f, 0.42f, 0.56f), new Color(0.03f, 0.07f, 0.12f))   // agua helada y oscura
+                        : Recursos25D.MaterialColor(new Color(0.42f, 0.74f, 0.93f), new Color(0.04f, 0.1f, 0.16f));
                     Recursos25D.Primitiva(PrimitiveType.Cube, capaCaminos, centro + Vector3.up * (h - 0.006f) * 0.5f,
                         new Vector3(ANCHO_PANTANO - 0.06f, h - 0.006f, largo + ANCHO_PANTANO - 0.06f), agua, new Vector3(0f, giro, 0f));
                     break;
                 }
                 case TipoTerreno.Sendero:
-                    Losa(centro, ANCHO_SENDERO, largo, h - 0.004f, giro, tinteSendero);
+                    Losa(centro, ANCHO_SENDERO, largo, h - 0.004f, giro, TinteSendero);
                     break;
                 default:
-                    Losa(centro, ANCHO_CAMINO, largo, h, giro, null);
+                    Losa(centro, ANCHO_CAMINO, largo, h, giro, TinteCamino);
                     break;
             }
         }
@@ -274,8 +283,8 @@ namespace TowerDefenseGameplay
             // Tesoro y antorchas al pie del torreón
             Recursos25D.CrearModelo(KK("chest_rare"), castillo, new Vector3(0.36f, 0f, -0.68f), Vector3.one * 0.2f, 160f);
             Recursos25D.CrearModelo(KK("coinsLarge"), castillo, new Vector3(-0.32f, 0f, -0.7f), Vector3.one * 0.2f, 20f);
-            Recursos25D.CrearModelo(KK("torch"), castillo, new Vector3(-0.7f, 0f, -0.55f), Vector3.one * 0.3f);
-            Recursos25D.CrearModelo(KK("torch"), castillo, new Vector3(0.72f, 0f, -0.5f), Vector3.one * 0.3f);
+            Antorcha(castillo, new Vector3(-0.7f, 0f, -0.55f), 0.3f);
+            Antorcha(castillo, new Vector3(0.72f, 0f, -0.5f), 0.3f);
 
             // Núcleo: cristales que cambian de color con la vida de la base
             Transform cristales = Recursos25D.CrearModelo(TD("tower-round-crystals"), castillo, new Vector3(0f, alto - 0.12f, 0f), Vector3.one * 0.7f);
@@ -297,6 +306,71 @@ namespace TowerDefenseGameplay
             rDomo.sortingOrder = 6;
         }
 
+        /// <summary>Antorcha de KayKit con llama y resplandor cálido (parpadea en Animar).</summary>
+        private void Antorcha(Transform padre, Vector3 pos, float escala)
+        {
+            Transform t = Recursos25D.CrearModelo(KK("torch"), padre, pos, Vector3.one * escala);
+            float alto = t != null && Recursos25D.Limites(t, padre, out Bounds b) ? b.max.y : escala * 1.3f;
+            Vector3 punta = new Vector3(pos.x, alto + 0.03f, pos.z);
+            Recursos25D.Primitiva(PrimitiveType.Sphere, padre, punta, new Vector3(0.07f, 0.1f, 0.07f),
+                Recursos25D.MaterialColor(new Color(1f, 0.55f, 0.15f), new Color(1f, 0.45f, 0.1f)));
+
+            SpriteRenderer halo = GraficosProc.CrearSprite(padre, "Resplandor", GraficosProc.Brillo, new Color(1f, 0.55f, 0.2f, 0.5f), 7, 0.75f);
+            halo.transform.localPosition = punta;
+            resplandores.Add(halo);
+        }
+
+        /// <summary>Nieve que cae sobre el tablero (partículas en espacio de mundo; la altura es -Z).</summary>
+        private void CrearNieve()
+        {
+            GameObject go = new GameObject("Nieve");
+            go.transform.SetParent(contenido, false);
+            nieve = go.AddComponent<ParticleSystem>();
+            nieve.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+
+            ParticleSystem.MainModule main = nieve.main;
+            main.loop = true;
+            main.prewarm = true;
+            main.playOnAwake = true;
+            main.startLifetime = 7f;
+            main.startSpeed = 0f;
+            main.startSize = new ParticleSystem.MinMaxCurve(0.05f, 0.11f);
+            main.startColor = new Color(0.85f, 0.92f, 1f, 0.75f);
+            main.maxParticles = 900;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+
+            ParticleSystem.EmissionModule em = nieve.emission;
+            em.rateOverTime = 90f;
+
+            ParticleSystem.ShapeModule sh = nieve.shape;
+            sh.shapeType = ParticleSystemShapeType.Box;
+            sh.scale = new Vector3(18f, 16f, 0.1f);
+
+            // Caen hacia el suelo (+Z) con un leve vaivén lateral
+            ParticleSystem.VelocityOverLifetimeModule vel = nieve.velocityOverLifetime;
+            vel.enabled = true;
+            vel.space = ParticleSystemSimulationSpace.World;
+            vel.x = new ParticleSystem.MinMaxCurve(-0.25f, 0.15f);
+            vel.y = new ParticleSystem.MinMaxCurve(-0.2f, 0.1f);
+            vel.z = new ParticleSystem.MinMaxCurve(0.55f, 0.85f);
+
+            ParticleSystem.ColorOverLifetimeModule col = nieve.colorOverLifetime;
+            col.enabled = true;
+            Gradient g = new Gradient();
+            g.SetKeys(
+                new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
+                new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(1f, 0.1f), new GradientAlphaKey(1f, 0.85f), new GradientAlphaKey(0f, 1f) });
+            col.color = new ParticleSystem.MinMaxGradient(g);
+
+            ParticleSystemRenderer rend = go.GetComponent<ParticleSystemRenderer>();
+            Material mat = new Material(GraficosProc.MaterialLinea);
+            mat.mainTexture = GraficosProc.Brillo.texture;
+            rend.sharedMaterial = mat;
+            rend.sortingOrder = 18;
+            go.transform.position = new Vector3(0f, 0f, -4.5f);
+            nieve.Play();
+        }
+
         private void ConstruirPortal()
         {
             // Arco de mazmorra (KayKit): su paso va a lo largo del eje Z del modelo
@@ -304,8 +378,8 @@ namespace TowerDefenseGameplay
             {
                 Recursos25D.Primitiva(PrimitiveType.Cube, portal, new Vector3(0f, 0.6f, 0f), new Vector3(1.1f, 1.2f, 0.3f), Recursos25D.MaterialColor(new Color(0.45f, 0.45f, 0.5f)));
             }
-            Recursos25D.CrearModelo(KK("torch"), portal, new Vector3(-0.72f, 0f, 0.3f), Vector3.one * 0.28f);
-            Recursos25D.CrearModelo(KK("torch"), portal, new Vector3(0.72f, 0f, 0.3f), Vector3.one * 0.28f);
+            Antorcha(portal, new Vector3(-0.72f, 0f, 0.3f), 0.28f);
+            Antorcha(portal, new Vector3(0.72f, 0f, 0.3f), 0.28f);
 
             // Plataforma de aparición del kit Kenney delante de la puerta
             Transform pad = Recursos25D.CrearModelo(TD("spawn-round"), portal, new Vector3(0f, 0f, 0.62f), Vector3.one * 1.3f);
@@ -369,6 +443,12 @@ namespace TowerDefenseGameplay
             Vaciar(capaDecor);
 
             Rect tablero = Vista25D.Instance != null ? Vista25D.Instance.LimitesTablero() : new Rect(-8f, -6f, 16f, 12f);
+            if (nieve != null)
+            {
+                nieve.transform.position = new Vector3(tablero.center.x, tablero.center.y, -4.5f);
+                ParticleSystem.ShapeModule sh = nieve.shape;
+                sh.scale = new Vector3(tablero.width + 2f, tablero.height + 2f, 0.1f);
+            }
             List<Segmento> segs = Segmentos(g);
             PlotTorre[] plots = FindObjectsByType<PlotTorre>(FindObjectsInactive.Include, FindObjectsSortMode.None);
             GameManager gm = GameManager.Instance;
@@ -413,8 +493,8 @@ namespace TowerDefenseGameplay
                     float giro = rng.Next(4) * 90f;
 
                     // La cara superior del pasto queda en y = 0 (el plano del juego)
-                    Transform t = Recursos25D.CrearModelo(TD(pieza), capaTerreno, Recursos25D.AModelo(p, -0.2f), escala, giro);
-                    if (t == null && pieza != "tile") t = Recursos25D.CrearModelo(TD("tile"), capaTerreno, Recursos25D.AModelo(p, -0.2f), escala, giro);
+                    Transform t = Recursos25D.CrearModelo(Recursos25D.Nieve(pieza), capaTerreno, Recursos25D.AModelo(p, -0.2f), escala, giro);
+                    if (t == null && pieza != "tile") t = Recursos25D.CrearModelo(Recursos25D.Nieve("tile"), capaTerreno, Recursos25D.AModelo(p, -0.2f), escala, giro);
                     if (t == null)
                     {
                         Recursos25D.Primitiva(PrimitiveType.Cube, capaTerreno, Recursos25D.AModelo(p, -0.1f), new Vector3(CELDA, 0.2f, CELDA),
@@ -439,7 +519,7 @@ namespace TowerDefenseGameplay
                 string nombre = detalles[rng.Next(detalles.Length)];
                 float esc = Mathf.Lerp(0.75f, 1.15f, (float)rng.NextDouble());
                 float giro = (float)rng.NextDouble() * 360f;
-                if (Recursos25D.CrearModelo(TD(nombre), capaDecor, Recursos25D.AModelo(p), Vector3.one * esc, giro) == null && nombre.Contains("tree"))
+                if (Recursos25D.CrearModelo(Recursos25D.Nieve(nombre), capaDecor, Recursos25D.AModelo(p), Vector3.one * esc, giro) == null && nombre.Contains("tree"))
                 {
                     Recursos25D.Primitiva(PrimitiveType.Capsule, capaDecor, Recursos25D.AModelo(p, 0.25f * esc),
                         new Vector3(0.3f, 0.25f, 0.3f) * esc, Recursos25D.MaterialColor(new Color(0.2f, 0.6f, 0.35f)));
@@ -465,6 +545,18 @@ namespace TowerDefenseGameplay
         {
             float t = Time.unscaledTime;
             GameManager gm = GameManager.Instance;
+
+            // Resplandor de antorchas: siempre de cara a la cámara y con un parpadeo irregular
+            Quaternion cartel = Vista25D.RotacionCartel;
+            for (int i = 0; i < resplandores.Count; i++)
+            {
+                SpriteRenderer h = resplandores[i];
+                if (h == null) continue;
+                float parpadeo = 0.75f + 0.15f * Mathf.Sin(t * 11f + i * 1.7f) + 0.1f * Mathf.Sin(t * 23f + i);
+                h.transform.rotation = cartel;
+                h.transform.localScale = Vector3.one * 0.75f * parpadeo;
+                h.color = new Color(1f, 0.55f, 0.2f, 0.42f * parpadeo);
+            }
 
             if (discoPortal != null)
             {

@@ -29,7 +29,8 @@ namespace TowerDefenseGameplay
         private Color tintePad = new Color(0f, 0f, 0f, 0f);
         private Color tinteMarco = new Color(0f, 0f, 0f, -1f);
         private int versionVista = -1;
-        private static readonly Color tinteLibre = new Color(0.4f, 0.68f, 0.55f, 0.38f); // losa libre: discreta, entre piedra y pasto
+        // Losa libre: discreta pero visible (pizarra oscura sobre la nieve en el tema sombrío)
+        private static Color tinteLibre => Recursos25D.TemaSombrio ? new Color(0.2f, 0.25f, 0.34f, 0.42f) : new Color(0.4f, 0.68f, 0.55f, 0.38f);
 
         private static readonly Color colorLibre = new Color(0.45f, 0.85f, 1f, 0.13f);
         private static readonly Color colorOcupado = new Color(0.45f, 0.85f, 1f, 0.05f);

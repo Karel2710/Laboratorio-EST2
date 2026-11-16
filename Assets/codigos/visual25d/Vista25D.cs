@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace TowerDefenseGameplay
 {
@@ -24,8 +25,8 @@ namespace TowerDefenseGameplay
         public const float ALTURA_CAMINO = 0.04f; // grosor de las baldosas del camino
         public const float ALTURA_PAD = 0.04f;    // grosor de las plataformas de construcción
 
-        /// <summary>Fondo de la vista 2.5D: gris azulado oscuro sobre el que flota la isla.</summary>
-        public static readonly Color COLOR_FONDO = new Color(0.12f, 0.13f, 0.17f);
+        /// <summary>Fondo de la vista 2.5D (y color de la neblina): azul noche casi negro en el tema sombrío.</summary>
+        public static Color COLOR_FONDO => Recursos25D.TemaSombrio ? new Color(0.035f, 0.045f, 0.075f) : new Color(0.12f, 0.13f, 0.17f);
 
         // Márgenes del encuadre (fracción de pantalla) para no quedar bajo el HUD
         private const float MARGEN_LATERAL = 0.015f;
@@ -43,6 +44,7 @@ namespace TowerDefenseGameplay
         private bool pendiente = true;
         private Rect limites;
         private bool limitesCalculados;
+        private GameObject vineta;   // bordes de pantalla oscurecidos (solo 2.5D con tema sombrío)
 
         public static Vista25D Asegurar()
         {
@@ -141,7 +143,9 @@ namespace TowerDefenseGameplay
                 cam.nearClipPlane = 0.1f;
                 cam.farClipPlane = 300f;
                 cam.backgroundColor = COLOR_FONDO;
-                Encuadrar();
+                float distancia = Encuadrar();
+                // Neblina: empieza un poco antes del centro del tablero y cubre el horizonte
+                Recursos25D.AplicarAmbiente(COLOR_FONDO, distancia - 4f, distancia + 7f);
             }
             else
             {
@@ -154,10 +158,52 @@ namespace TowerDefenseGameplay
                 cam.transform.SetPositionAndRotation(posOriginal, rotOriginal);
             }
 
+            if (Activa && Recursos25D.TemaSombrio && vineta == null) CrearVineta();
+            if (vineta != null) vineta.SetActive(Activa && Recursos25D.TemaSombrio);
+
             anchoPrevio = Screen.width;
             altoPrevio = Screen.height;
             pendiente = false;
             Version++;
+        }
+
+        /// <summary>
+        /// Viñeta: oscurece los bordes de la pantalla para un ambiente más sombrío. Va en un lienzo
+        /// por debajo del HUD y no bloquea clics.
+        /// </summary>
+        private void CrearVineta()
+        {
+            vineta = new GameObject("VinetaSombria");
+            vineta.transform.SetParent(transform, false);
+            Canvas canvas = vineta.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = -50;
+
+            const int n = 128;
+            Texture2D tex = new Texture2D(n, n, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+            Color oscuro = new Color(0.01f, 0.015f, 0.03f, 0f);
+            for (int y = 0; y < n; y++)
+            {
+                for (int x = 0; x < n; x++)
+                {
+                    float dx = (x + 0.5f) / n * 2f - 1f, dy = (y + 0.5f) / n * 2f - 1f;
+                    float d = Mathf.Sqrt(dx * dx + dy * dy) / 1.4142f;
+                    oscuro.a = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.35f, 1f, d)) * 0.75f;
+                    tex.SetPixel(x, y, oscuro);
+                }
+            }
+            tex.Apply();
+
+            GameObject go = new GameObject("Vineta", typeof(RectTransform));
+            go.transform.SetParent(vineta.transform, false);
+            RawImage img = go.AddComponent<RawImage>();
+            img.texture = tex;
+            img.raycastTarget = false;
+            RectTransform rt = (RectTransform)go.transform;
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
         }
 
         /// <summary>Rectángulo del tablero jugable: casillas y ruta (sin el punto de aparición, que queda fuera del mapa).</summary>
@@ -193,7 +239,7 @@ namespace TowerDefenseGameplay
         /// Busca la distancia de la cámara (con inclinación fija) para que las cuatro esquinas del
         /// tablero quepan dentro de los márgenes, y la centra verticalmente entre las barras del HUD.
         /// </summary>
-        private void Encuadrar()
+        private float Encuadrar()
         {
             Rect r = LimitesTablero();
             Quaternion rot = Quaternion.Euler(-ANGULO, 0f, 0f);
@@ -226,6 +272,7 @@ namespace TowerDefenseGameplay
                 objetivo.y += ((yInf + ySup) * 0.5f - centroDeseado) * r.height * 0.9f;
             }
             cam.transform.position = objetivo - adelante * distancia;
+            return distancia;
         }
 
         private bool Cabe(Vector3[] esquinas)

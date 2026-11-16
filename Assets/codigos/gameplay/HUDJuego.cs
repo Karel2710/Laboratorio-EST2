@@ -604,7 +604,7 @@ namespace TowerDefenseGameplay
                 "<color=#66DDFF><b>VISTA 2.5D</b></color>\n" +
                 "🧊 2.5D alterna entre la vista inclinada con modelos 3D y la vista 2D cenital. " +
                 "Es solo visual: caminos, grafos, torres y oleadas funcionan igual en ambas. " +
-                "En 2.5D cada enemigo lleva un aro del color de su tipo. " +
+                "En 2.5D cada enemigo lleva un aro del color de su tipo. Ambiente: invierno nocturno (nieve, luz fría y neblina). " +
                 "Modelos: Kenney Tower Defense Kit y KayKit Dungeon Pack (licencia CC0).\n\n" +
                 "<color=#66DDFF><b>ACCESIBILIDAD</b></color>\n" +
                 "👁 Daltonismo: cambia verde/rojo por azul/naranja. Cada enemigo tiene una silueta distinta además del color. " +

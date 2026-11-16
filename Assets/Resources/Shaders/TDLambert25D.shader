@@ -1,6 +1,7 @@
-// Sombreado simple para la vista 2.5D: textura + luz direccional fija (Lambert) + tinte.
+// Sombreado simple para la vista 2.5D: textura + luz direccional fija (Lambert) + tinte + neblina.
 // No depende de luces de la escena, por eso funciona igual con el Renderer 2D de URP
 // (se dibuja como pasada "SRPDefaultUnlit", sin LightMode).
+// El color de la luz, la luz ambiente y la neblina son globales (_TD_*), los fija Recursos25D.AplicarAmbiente.
 Shader "TD/Lambert25D"
 {
     Properties
@@ -10,7 +11,6 @@ Shader "TD/Lambert25D"
         _Emision ("Emision", Color) = (0,0,0,0)
         _Tinte ("Tinte (alfa = intensidad)", Color) = (0,0,0,0)
         _LuzDir ("Direccion hacia la luz", Vector) = (-0.35, -0.45, -0.82, 0)
-        _Ambiente ("Luz ambiente", Range(0,1)) = 0.5
         _Corte ("Recorte alfa", Range(0,1)) = 0
         [Enum(UnityEngine.Rendering.CullMode)] _Cull ("Cull", Float) = 2
         [Enum(UnityEngine.Rendering.BlendMode)] _SrcBlend ("Src Blend", Float) = 1
@@ -43,8 +43,13 @@ Shader "TD/Lambert25D"
             fixed4 _Emision;
             fixed4 _Tinte;
             float4 _LuzDir;
-            float _Ambiente;
             float _Corte;
+
+            // Globales del ambiente (Shader.SetGlobal*)
+            float4 _TD_Luz;          // rgb = color de la luz direccional
+            float4 _TD_Ambiente;     // rgb = luz ambiente
+            float4 _TD_Niebla;       // rgb = color de la neblina, a = intensidad máxima
+            float4 _TD_NieblaRango;  // x = distancia de inicio, y = distancia final
 
             struct appdata
             {
@@ -58,6 +63,7 @@ Shader "TD/Lambert25D"
                 float4 pos : SV_POSITION;
                 float2 uv : TEXCOORD0;
                 float3 normal : TEXCOORD1;
+                float dist : TEXCOORD2;
             };
 
             v2f vert (appdata v)
@@ -66,6 +72,8 @@ Shader "TD/Lambert25D"
                 o.pos = UnityObjectToClipPos(v.vertex);
                 o.uv = TRANSFORM_TEX(v.uv, _MainTex);
                 o.normal = UnityObjectToWorldNormal(v.normal);
+                float3 mundo = mul(unity_ObjectToWorld, v.vertex).xyz;
+                o.dist = distance(mundo, _WorldSpaceCameraPos);
                 return o;
             }
 
@@ -76,11 +84,15 @@ Shader "TD/Lambert25D"
 
                 float3 n = normalize(i.normal) * (cara > 0 ? 1.0 : -1.0);
                 float lambert = saturate(dot(n, normalize(_LuzDir.xyz)));
-                float luz = _Ambiente + (1.0 - _Ambiente) * lambert;
+                float3 luz = _TD_Ambiente.rgb + _TD_Luz.rgb * lambert;
 
-                fixed3 col = tex.rgb * luz;
+                float3 col = tex.rgb * luz;
                 col = lerp(col, _Tinte.rgb, _Tinte.a);
                 col += _Emision.rgb;
+
+                float rango = max(0.001, _TD_NieblaRango.y - _TD_NieblaRango.x);
+                float niebla = saturate((i.dist - _TD_NieblaRango.x) / rango) * _TD_Niebla.a;
+                col = lerp(col, _TD_Niebla.rgb, niebla);
                 return fixed4(col, tex.a);
             }
             ENDCG

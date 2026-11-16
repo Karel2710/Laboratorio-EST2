@@ -708,7 +708,7 @@ namespace TowerDefenseGameplay
                 // Atalaya de madera
                 string pieza = nivel == 1 ? "wood-structure" : "wood-structure-high";
                 float e = nivel == 3 ? k * 1.05f : k;
-                alto = Escenario25D.Apilar(raiz3D, Vector3.zero, e, 0f, TD(pieza));
+                alto = Escenario25D.Apilar(raiz3D, Vector3.zero, e, 0f, Recursos25D.Nieve(pieza));
                 if (alto < 0.05f)
                 {
                     alto = nivel == 1 ? 0.3f : 0.55f;
