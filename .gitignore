@@ -1,36 +1,71 @@
-# ─── Unity Generated ─────────────────────────────────────────────────────────
-Library/
-Temp/
-Obj/
-Build/
-Builds/
-Logs/
-User[Ss]ettings/
-MemoryCaptures/
-Recordings/
+# ==============================================================================
+# Unity .gitignore
+# Optimizado para Unity 6+, Netcode for GameObjects, Visual Studio / Rider / VS Code
+# ==============================================================================
+
+# ─── Carpetas Generadas por Unity ─────────────────────────────────────────────
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+ExportedObj/
 sysinfo.txt
+*.stackdump
 
-# Asset Store Tools
+# ─── Multiplayer Play Mode (Clones Virtuales) ─────────────────────────────────
+.virtualprojects/
+[Vv]irtual[Pp]rojects/
+ProjectSettings/VirtualProjectsConfig.json
+
+# ─── Herramientas de Asset Store y Plugins ────────────────────────────────────
 /[Aa]ssets/AssetStoreTools*
+/[Aa]ssets/Plugins/Editor/JetBrains*
 
-# Jetbrains Rider plugin
-[Aa]ssets/[Pp]lugins/Editor/JetBrains*
-
-# Addressables
+# ─── Addressables y StreamingAssets generados ─────────────────────────────────
 /[Aa]ssets/[Aa]ddressable[Aa]ssets[Dd]ata/*/*.bin*
 /[Aa]ssets/[Ss]treamingAssets/aa.meta
-/[Aa]ssets/[Ss]treamingAssets/aa/
+/[Aa]ssets/[Ss]treamingAssets/aa/*
 
-# ─── Unity File Types ────────────────────────────────────────────────────────
-*.pidb
-*.pidb.meta
+# ─── Archivos de Solución y Proyecto (Visual Studio / Rider / VS Code) ────────
+*.sln
+*.slnx
+*.csproj
 *.unityproj
+*.booproj
 *.suo
-*.tmp
 *.user
 *.userprefs
-*.booproj
-*.svd
+*.userosscache
+*.sln.docstates
+.vs/
+.idea/
+.vscode/
+.consulo/
+.gradle/
+*.sublime-project
+*.sublime-workspace
+
+# ─── Binarios, Ejecutables y Paquetes de Build ────────────────────────────────
+*.apk
+*.aab
+*.app
+*.exe
+*.x86
+*.x86_64
+*.unitypackage
+*.dylib
+*.dll.mdb
+crashlytics-build.properties
+
+# ─── Archivos Temporales y Símbolos de Depuración ─────────────────────────────
+*.tmp
+*.pidb
+*.pidb.meta
 *.pdb
 *.pdb.meta
 *.mdb
@@ -38,30 +73,8 @@ sysinfo.txt
 *.opendb
 *.VC.db
 
-# ─── Builds & Packages ───────────────────────────────────────────────────────
-*.apk
-*.aab
-*.app
-*.exe
-*.x86
-*.x86_64
-ExportedObj/
-*.unitypackage
-crashlytics-build.properties
-
-# ─── Visual Studio / Rider ───────────────────────────────────────────────────
-.vs/
-.idea/
-*.csproj
-*.sln
-*.suo
-*.userosscache
-*.sln.docstates
-
-# ─── VS Code ─────────────────────────────────────────────────────────────────
-.vscode/
-
-# ─── OS — Windows ────────────────────────────────────────────────────────────
+# ─── Archivos del Sistema Operativo ───────────────────────────────────────────
+# Windows
 Thumbs.db
 Thumbs.db:encryptable
 ehthumbs.db
@@ -70,7 +83,7 @@ Desktop.ini
 $RECYCLE.BIN/
 *.lnk
 
-# ─── OS — macOS ──────────────────────────────────────────────────────────────
+# macOS
 .DS_Store
 .AppleDouble
 .LSOverride
@@ -78,19 +91,17 @@ $RECYCLE.BIN/
 .Spotlight-V100
 .Trashes
 
-# ─── OS — Linux ──────────────────────────────────────────────────────────────
+# Linux
 *~
 .fuse_hidden*
 .directory
 .Trash-*
 
-# ─── Node / npm ──────────────────────────────────────────────────────────────
+# ─── Node / npm / Python (Herramientas auxiliares) ─────────────────────────────
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
-# ─── Python (scripts de utilidad) ────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.pyo
@@ -98,7 +109,12 @@ __pycache__/
 *.egg-info/
 dist/
 
-# ─── Misc ────────────────────────────────────────────────────────────────────
+# ─── Backups y Logs ───────────────────────────────────────────────────────────
 *.bak
 *.orig
 *.log
+*.swp
+
+# ─── Regla de Seguridad para Metadatos de Assets ──────────────────────────────
+# Garantiza que los archivos .meta de Assets nunca sean ignorados por error
+!/[Aa]ssets/**/*.meta
