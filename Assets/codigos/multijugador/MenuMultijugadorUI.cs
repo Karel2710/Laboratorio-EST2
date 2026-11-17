@@ -35,8 +35,13 @@ namespace TowerDefenseGameplay
         private string nombreRival = "";
         private int idRival = 0;
 
+        /// <summary>Si es true al cargar el menú principal, abre directamente la sala de multijugador LAN.</summary>
+        public static bool AbrirSalaDirectamenteAlCargar = false;
+
         // UI
         private GameObject panel;
+        private GameObject panelInicio;
+        private GameObject modalLeaderboard;
         private RectTransform listaComandantes;
         private InputField inputNuevoComandante;
         private Text txtComandante;
@@ -57,9 +62,15 @@ namespace TowerDefenseGameplay
             descubrimiento = gameObject.AddComponent<DescubrimientoLAN>();
             descubrimiento.AlCambiarLista += RefrescarPartidas;
 
-            CrearBotonEnMenu();
+            ConstruirPantallaInicio();
             ConstruirPanel();
             panel.SetActive(false);
+
+            if (AbrirSalaDirectamenteAlCargar)
+            {
+                AbrirSalaDirectamenteAlCargar = false;
+                AbrirPanel();
+            }
         }
 
         private void OnDestroy()
@@ -68,35 +79,183 @@ namespace TowerDefenseGameplay
             DesconectarEventosRed();
         }
 
-        #region Botón del menú principal
+        #region Pantalla de Inicio / Menú Principal
 
-        private void CrearBotonEnMenu()
+        private void ConstruirPantallaInicio()
         {
-            // Se coloca junto al botón original del menú (mismo canvas, mismas anclas), un poco más arriba
-            Button original = FindFirstObjectByType<Button>();
-            Button btn;
-            if (original != null && original.transform.parent != null)
+            // Ocultar botones heredados en la escena para presentar un menú unificado y limpio
+            Button[] botonesEscena = FindObjectsByType<Button>(FindObjectsSortMode.None);
+            foreach (var b in botonesEscena)
             {
-                RectTransform rtOriginal = original.GetComponent<RectTransform>();
-                btn = UIFabrica.CrearBoton(original.transform.parent, "BtnMultijugadorLAN", "🌐 Multijugador LAN", new Color(0.15f, 0.45f, 0.75f, 0.95f), 20);
-                RectTransform rt = btn.GetComponent<RectTransform>();
-                rt.anchorMin = rtOriginal.anchorMin;
-                rt.anchorMax = rtOriginal.anchorMax;
-                rt.pivot = rtOriginal.pivot;
-                rt.sizeDelta = rtOriginal.sizeDelta;
-                rt.anchoredPosition = rtOriginal.anchoredPosition + new Vector2(0f, rtOriginal.sizeDelta.y + 12f);
+                if (b.transform.root != transform)
+                {
+                    b.gameObject.SetActive(false);
+                }
+            }
+
+            Canvas canvas = UIFabrica.CrearCanvas("Canvas_PantallaInicio", 20);
+            canvas.transform.SetParent(transform, false);
+            panelInicio = canvas.gameObject;
+
+            RectTransform fondo = UIFabrica.CrearPanel(canvas.transform, "FondoOscuro", new Color(0.04f, 0.06f, 0.10f, 0.90f));
+            UIFabrica.Estirar(fondo);
+
+            RectTransform caja = UIFabrica.CrearPanel(fondo, "CajaInicio", new Color(0.08f, 0.11f, 0.16f, 0.98f));
+            UIFabrica.Anclar(caja, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(880, 710));
+            Outline borde = caja.gameObject.AddComponent<Outline>();
+            borde.effectColor = new Color(0.25f, 0.55f, 0.9f, 0.75f);
+            borde.effectDistance = new Vector2(2, -2);
+
+            VerticalLayoutGroup v = UIFabrica.Vertical(caja, 14, new RectOffset(36, 36, 26, 26));
+            v.childForceExpandHeight = false;
+
+            // Encabezado
+            Text txtTitulo = UIFabrica.CrearTexto(caja, "Titulo", "🏰 TOWER DEFENSE", 40, new Color(1f, 0.86f, 0.35f), TextAnchor.MiddleCenter);
+            UIFabrica.Tamano(txtTitulo, -1, 48);
+
+            Text txtSubtitulo = UIFabrica.CrearTexto(caja, "Subtitulo", "ESTRUCTURAS DE DATOS II · LABORATORIO", 16, new Color(0.45f, 0.82f, 1f), TextAnchor.MiddleCenter);
+            UIFabrica.Tamano(txtSubtitulo, -1, 24);
+
+            RectTransform separador = UIFabrica.CrearPanel(caja, "Separador", new Color(0.25f, 0.35f, 0.50f, 0.7f));
+            UIFabrica.Tamano(separador, -1, 2);
+
+            // Tarjeta 1: Modo Historia (Un Jugador)
+            RectTransform cardHistoria = UIFabrica.CrearPanel(caja, "CardHistoria", new Color(0.05f, 0.08f, 0.13f, 0.85f));
+            UIFabrica.Tamano(cardHistoria, -1, 142);
+            Outline outH = cardHistoria.gameObject.AddComponent<Outline>();
+            outH.effectColor = new Color(0.2f, 0.45f, 0.7f, 0.5f);
+            outH.effectDistance = new Vector2(1, -1);
+            VerticalLayoutGroup vH = UIFabrica.Vertical(cardHistoria, 8, new RectOffset(16, 16, 12, 12));
+            vH.childForceExpandHeight = false;
+
+            Button btnHistoria = UIFabrica.CrearBoton(cardHistoria, "BtnHistoria", "🛡️ MODO HISTORIA (UN JUGADOR)", new Color(0.16f, 0.44f, 0.72f), 21);
+            UIFabrica.Tamano(btnHistoria, -1, 56);
+            btnHistoria.onClick.AddListener(() =>
+            {
+                ModoJuego.IniciadoDesdeMenu = true;
+                ModoJuego.ConfigurarUnJugador();
+                SceneManager.LoadScene(EscenaJuego);
+            });
+
+            Text descHistoria = UIFabrica.CrearTexto(cardHistoria, "DescHistoria",
+                "Defiende la base en solitario contra 8 oleadas continuas. Gestiona tu oro, coloca defensas y potencia tus torres con el MST y el árbol de habilidades.",
+                14, new Color(0.78f, 0.88f, 1f), TextAnchor.MiddleCenter, FontStyle.Normal);
+            UIFabrica.Tamano(descHistoria, -1, 44);
+
+            // Tarjeta 2: Modo Multijugador (LAN 1v1)
+            RectTransform cardMulti = UIFabrica.CrearPanel(caja, "CardMulti", new Color(0.05f, 0.08f, 0.13f, 0.85f));
+            UIFabrica.Tamano(cardMulti, -1, 142);
+            Outline outM = cardMulti.gameObject.AddComponent<Outline>();
+            outM.effectColor = new Color(0.2f, 0.6f, 0.4f, 0.5f);
+            outM.effectDistance = new Vector2(1, -1);
+            VerticalLayoutGroup vM = UIFabrica.Vertical(cardMulti, 8, new RectOffset(16, 16, 12, 12));
+            vM.childForceExpandHeight = false;
+
+            Button btnMulti = UIFabrica.CrearBoton(cardMulti, "BtnMultiplayer", "🌐 MODO MULTIJUGADOR (LAN 1v1)", new Color(0.18f, 0.58f, 0.38f), 21);
+            UIFabrica.Tamano(btnMulti, -1, 56);
+            btnMulti.onClick.AddListener(AbrirPanel);
+
+            Text descMulti = UIFabrica.CrearTexto(cardMulti, "DescMulti",
+                "Enfréntate en red local: juega como Atacante (rutas Dijkstra y tropas) o como Defensor (torres y sobrecarga de red).",
+                14, new Color(0.78f, 1f, 0.88f), TextAnchor.MiddleCenter, FontStyle.Normal);
+            UIFabrica.Tamano(descMulti, -1, 44);
+
+            // Fila de botones secundarios
+            RectTransform filaSecundaria = UIFabrica.CrearContenedor(caja, "FilaSecundaria");
+            UIFabrica.Tamano(filaSecundaria, -1, 50);
+            HorizontalLayoutGroup hSec = UIFabrica.Horizontal(filaSecundaria, 12, null);
+            hSec.childForceExpandWidth = false;
+            hSec.childAlignment = TextAnchor.MiddleCenter;
+
+            Button btnCmds = UIFabrica.CrearBoton(filaSecundaria, "BtnComandantes", "👥 Comandantes (BST)", new Color(0.18f, 0.28f, 0.42f), 15);
+            UIFabrica.Tamano(btnCmds, 240, -1);
+            btnCmds.onClick.AddListener(AbrirPanel);
+
+            Button btnLead = UIFabrica.CrearBoton(filaSecundaria, "BtnLeaderboard", "🏆 Leaderboard", new Color(0.18f, 0.28f, 0.42f), 15);
+            UIFabrica.Tamano(btnLead, 240, -1);
+            btnLead.onClick.AddListener(MostrarModalLeaderboard);
+
+            Button btnSalir = UIFabrica.CrearBoton(filaSecundaria, "BtnSalir", "❌ Salir", new Color(0.55f, 0.2f, 0.2f), 15);
+            UIFabrica.Tamano(btnSalir, 160, -1);
+            btnSalir.onClick.AddListener(() => Application.Quit());
+
+            // Tip pie de página
+            Text tip = UIFabrica.CrearTexto(caja, "Tip", "💡 Ambos jugadores deben estar conectados a la misma red Wi-Fi o cable LAN para jugar multijugador.", 13, new Color(0.65f, 0.70f, 0.80f), TextAnchor.MiddleCenter, FontStyle.Italic);
+            UIFabrica.Tamano(tip, -1, 24);
+        }
+
+        private void MostrarModalLeaderboard()
+        {
+            if (modalLeaderboard != null)
+            {
+                Destroy(modalLeaderboard);
+            }
+
+            Canvas canvas = UIFabrica.CrearCanvas("Modal_Leaderboard", 210);
+            modalLeaderboard = canvas.gameObject;
+
+            RectTransform oscurecer = UIFabrica.CrearPanel(canvas.transform, "Oscurecer", new Color(0f, 0f, 0f, 0.75f));
+            UIFabrica.Estirar(oscurecer);
+
+            RectTransform caja = UIFabrica.CrearPanel(oscurecer, "Caja", new Color(0.08f, 0.11f, 0.17f, 0.98f));
+            UIFabrica.Anclar(caja, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(580, 620));
+            Outline borde = caja.gameObject.AddComponent<Outline>();
+            borde.effectColor = new Color(0.35f, 0.65f, 1f, 0.8f);
+            borde.effectDistance = new Vector2(2, -2);
+
+            VerticalLayoutGroup v = UIFabrica.Vertical(caja, 12, new RectOffset(24, 24, 20, 20));
+            v.childForceExpandHeight = false;
+
+            Text titulo = UIFabrica.CrearTexto(caja, "Titulo", "🏆 TABLA DE CLASIFICACIÓN (LEADERBOARD)", 22, new Color(1f, 0.88f, 0.35f), TextAnchor.MiddleCenter);
+            UIFabrica.Tamano(titulo, -1, 40);
+
+            Text subtitulo = UIFabrica.CrearTexto(caja, "Subtitulo", "Top 10 mejores puntajes históricos guardados en disco:", 14, new Color(0.75f, 0.85f, 0.95f), TextAnchor.MiddleCenter, FontStyle.Normal);
+            UIFabrica.Tamano(subtitulo, -1, 24);
+
+            RectTransform lista = UIFabrica.CrearContenedor(caja, "Lista");
+            UIFabrica.Tamano(lista, -1, 400);
+            VerticalLayoutGroup vLista = UIFabrica.Vertical(lista, 6, null);
+            vLista.childForceExpandHeight = false;
+
+            List<EntradaLeaderboard> top = LeaderboardJSON.CargarTop();
+            if (top == null || top.Count == 0)
+            {
+                Text vacio = UIFabrica.CrearTexto(lista, "Vacio", "No hay puntajes registrados aún.\n¡Juega y derrota enemigos para entrar al top!", 15, new Color(0.7f, 0.75f, 0.8f), TextAnchor.MiddleCenter, FontStyle.Italic);
+                UIFabrica.Tamano(vacio, -1, 120);
             }
             else
             {
-                Canvas canvas = UIFabrica.CrearCanvas("Canvas_BotonLAN", 50);
-                btn = UIFabrica.CrearBoton(canvas.transform, "BtnMultijugadorLAN", "🌐 Multijugador LAN", new Color(0.15f, 0.45f, 0.75f, 0.95f), 24);
-                UIFabrica.Anclar(btn.GetComponent<RectTransform>(), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 40), new Vector2(320, 70));
+                for (int i = 0; i < top.Count && i < 10; i++)
+                {
+                    EntradaLeaderboard entrada = top[i];
+                    string medalla = i == 0 ? "🥇" : (i == 1 ? "🥈" : (i == 2 ? "🥉" : $"#{i + 1}"));
+                    RectTransform fila = UIFabrica.CrearPanel(lista, $"Fila_{i}", new Color(0.12f, 0.16f, 0.24f, 0.9f));
+                    UIFabrica.Tamano(fila, -1, 34);
+                    HorizontalLayoutGroup hFila = UIFabrica.Horizontal(fila, 8, new RectOffset(12, 12, 0, 0));
+                    hFila.childForceExpandWidth = false;
+
+                    Text txtPos = UIFabrica.CrearTexto(fila, "Pos", medalla, 16, Color.white);
+                    UIFabrica.Tamano(txtPos, 50, -1);
+
+                    Text txtNom = UIFabrica.CrearTexto(fila, "Nom", entrada.nombre, 15, new Color(0.9f, 0.95f, 1f));
+                    UIFabrica.Tamano(txtNom, 320, -1, 1f);
+
+                    Text txtPts = UIFabrica.CrearTexto(fila, "Pts", $"{entrada.puntaje} pts", 15, new Color(1f, 0.85f, 0.35f), TextAnchor.MiddleRight);
+                    UIFabrica.Tamano(txtPts, 120, -1);
+                }
             }
-            btn.onClick.AddListener(AbrirPanel);
+
+            Button btnCerrar = UIFabrica.CrearBoton(caja, "BtnCerrar", "✕ Cerrar", new Color(0.55f, 0.2f, 0.2f), 18);
+            UIFabrica.Tamano(btnCerrar, 180, 44);
+            btnCerrar.onClick.AddListener(() =>
+            {
+                if (modalLeaderboard != null) Destroy(modalLeaderboard);
+            });
         }
 
         private void AbrirPanel()
         {
+            if (panelInicio != null) panelInicio.SetActive(false);
             panel.SetActive(true);
             RefrescarComandantes();
             if (estado == EstadoSala.Inactivo) descubrimiento.IniciarBusqueda();
@@ -110,6 +269,7 @@ namespace TowerDefenseGameplay
             Cancelar();
             descubrimiento.DetenerBusqueda();
             panel.SetActive(false);
+            if (panelInicio != null) panelInicio.SetActive(true);
         }
 
         #endregion
@@ -281,6 +441,7 @@ namespace TowerDefenseGameplay
                 ModoJuego.IdAtacante = idRival;
             }
 
+            ModoJuego.IniciadoDesdeMenu = true;
             ModoJuego.ConfigurarMultijugador(esHost, rolLocal);
             descubrimiento.DetenerAnuncio();
             descubrimiento.DetenerBusqueda();

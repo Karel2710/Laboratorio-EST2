@@ -23,6 +23,8 @@ namespace TowerDefenseGameplay
         private Button btnHabilidades;
         private Button btnComandantes;
         private Button btnSobrecarga;
+        private Button btnMenuPrincipal;
+        private GameObject panelPausa;
         private Text txtBannerCentro;
         private GameObject panelBanner;
 
@@ -116,6 +118,11 @@ namespace TowerDefenseGameplay
 
         private void Update()
         {
+            if (EntradaJuego.Presionada(KeyCode.Escape))
+            {
+                AlternarMenuPausa();
+            }
+
             // Actualizar cuenta regresiva suavemente
             GameManager gm = GameManager.Instance;
             if (gm == null || txtOleadaInfo == null) return;
@@ -360,6 +367,10 @@ namespace TowerDefenseGameplay
             txtRival = CrearTextoHUD(barraTop.transform, "TxtRival", 260);
             txtRival.gameObject.SetActive(false);
 
+            // Botón Menú Principal / Pausa
+            btnMenuPrincipal = CrearBotonHUD(barraTop.transform, "BtnMenuPrincipal", "🏠 Menú", new Color(0.20f, 0.26f, 0.36f), 85);
+            btnMenuPrincipal.onClick.AddListener(AlternarMenuPausa);
+
             // 2. Barra Inferior de Selección y Construcción Libre de Torres
             GameObject barraConst = new GameObject("BarraConstruccion");
             barraConst.transform.SetParent(canvasObj.transform, false);
@@ -556,6 +567,94 @@ namespace TowerDefenseGameplay
             rtT.sizeDelta = Vector2.zero;
 
             return btn;
+        }
+
+        #endregion
+
+        #region Menú de Pausa y Selección de Modo
+
+        public void AlternarMenuPausa()
+        {
+            if (panelPausa != null)
+            {
+                bool activo = !panelPausa.activeSelf;
+                panelPausa.SetActive(activo);
+                if (!ModoJuego.EsMultijugador)
+                {
+                    Time.timeScale = activo ? 0f : 1f;
+                }
+                return;
+            }
+
+            ConstruirMenuPausa();
+        }
+
+        private void ConstruirMenuPausa()
+        {
+            Canvas canvas = UIFabrica.CrearCanvas("Canvas_MenuPausaHUD", 180);
+            panelPausa = canvas.gameObject;
+
+            RectTransform oscurecer = UIFabrica.CrearPanel(canvas.transform, "Oscurecer", new Color(0f, 0f, 0f, 0.75f));
+            UIFabrica.Estirar(oscurecer);
+
+            RectTransform caja = UIFabrica.CrearPanel(oscurecer, "CajaPausa", new Color(0.08f, 0.11f, 0.17f, 0.98f));
+            UIFabrica.Anclar(caja, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(560, 480));
+            Outline borde = caja.gameObject.AddComponent<Outline>();
+            borde.effectColor = new Color(0.35f, 0.65f, 1f, 0.8f);
+            borde.effectDistance = new Vector2(2, -2);
+
+            VerticalLayoutGroup v = UIFabrica.Vertical(caja, 14, new RectOffset(32, 32, 28, 28));
+            v.childForceExpandHeight = false;
+
+            Text titulo = UIFabrica.CrearTexto(caja, "Titulo", "⏸️ MENÚ / SELECCIÓN DE MODO", 24, new Color(1f, 0.88f, 0.35f), TextAnchor.MiddleCenter);
+            UIFabrica.Tamano(titulo, -1, 38);
+
+            string modoTexto = ModoJuego.EsMultijugador
+                ? $"Modo actual: <b>Multijugador LAN ({ModoJuego.NombreRol(ModoJuego.RolLocal)})</b>"
+                : "Modo actual: <b>Modo Historia (Un Jugador)</b>";
+            Text txtModo = UIFabrica.CrearTexto(caja, "TxtModo", modoTexto, 14, new Color(0.75f, 0.85f, 0.95f), TextAnchor.MiddleCenter, FontStyle.Normal);
+            UIFabrica.Tamano(txtModo, -1, 24);
+
+            Button btnReanudar = UIFabrica.CrearBoton(caja, "BtnReanudar", "▶ Reanudar Partida", new Color(0.18f, 0.55f, 0.35f), 18);
+            UIFabrica.Tamano(btnReanudar, -1, 48);
+            btnReanudar.onClick.AddListener(() =>
+            {
+                panelPausa.SetActive(false);
+                if (!ModoJuego.EsMultijugador) Time.timeScale = 1f;
+            });
+
+            Button btnIrMulti = UIFabrica.CrearBoton(caja, "BtnIrMulti", "🌐 Cambiar a Modo Multijugador LAN", new Color(0.18f, 0.45f, 0.75f), 18);
+            UIFabrica.Tamano(btnIrMulti, -1, 48);
+            btnIrMulti.onClick.AddListener(() =>
+            {
+                Time.timeScale = 1f;
+                if (RedLAN.Instancia != null && RedLAN.Instancia.Activa) RedLAN.Instancia.Detener();
+                ModoJuego.IniciadoDesdeMenu = false;
+                MenuMultijugadorUI.AbrirSalaDirectamenteAlCargar = true;
+                UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenu");
+            });
+
+            Button btnReiniciar = UIFabrica.CrearBoton(caja, "BtnReiniciar", "🔄 Reiniciar Partida", new Color(0.72f, 0.45f, 0.15f), 18);
+            UIFabrica.Tamano(btnReiniciar, -1, 46);
+            btnReiniciar.onClick.AddListener(() =>
+            {
+                Time.timeScale = 1f;
+                if (RedLAN.Instancia != null && RedLAN.Instancia.Activa) RedLAN.Instancia.Detener();
+                UnityEngine.SceneManagement.SceneManager.LoadScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().name);
+            });
+
+            Button btnMenu = UIFabrica.CrearBoton(caja, "BtnVolverMenu", "🏠 Volver al Menú Principal", new Color(0.35f, 0.22f, 0.25f), 18);
+            UIFabrica.Tamano(btnMenu, -1, 46);
+            btnMenu.onClick.AddListener(() =>
+            {
+                Time.timeScale = 1f;
+                if (RedLAN.Instancia != null && RedLAN.Instancia.Activa) RedLAN.Instancia.Detener();
+                ModoJuego.IniciadoDesdeMenu = false;
+                ModoJuego.ConfigurarUnJugador();
+                UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenu");
+            });
+
+            if (!ModoJuego.EsMultijugador) Time.timeScale = 0f;
         }
 
         #endregion

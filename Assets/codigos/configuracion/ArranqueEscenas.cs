@@ -44,6 +44,14 @@ namespace TowerDefenseGameplay
 
             if (Object.FindFirstObjectByType<levelManager>() != null)
             {
+                // Si se dio Play directo en SampleScene sin pasar por el menú, ir al menú principal
+                // para mostrar el selector de Modo Historia / Modo Multijugador.
+                if (!ModoJuego.IniciadoDesdeMenu && !ModoJuego.EsMultijugador)
+                {
+                    SceneManager.LoadScene("MainMenu");
+                    return;
+                }
+
                 PrepararEscenaJuego();
             }
             else if (Object.FindFirstObjectByType<MainMenu>() != null)

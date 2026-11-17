@@ -28,6 +28,9 @@ namespace TowerDefenseGameplay
         public static RolJugador RolLocal = RolJugador.Defensor;
         public static bool EsHost = false;
 
+        /// <summary>True cuando el juego pasó por el menú principal para seleccionar modo.</summary>
+        public static bool IniciadoDesdeMenu = false;
+
         /// <summary>Índice de dificultad del modo un jugador (0 = Nivel 1, 1 = Nivel 2, 2 = Nivel 3).</summary>
         public static int NivelUnJugador = 1;
 
