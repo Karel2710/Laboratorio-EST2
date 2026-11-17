@@ -35,7 +35,7 @@ namespace GrafosEST2
         {
             Grafo.Limpiar();
 
-            // 1. Vértices (15 Habilidades interconectadas en el DAG)
+            // 1. Vértices (22 Habilidades interconectadas en el DAG)
             // --- HABILIDAD RAÍZ ---
             Grafo.AgregarNodo("HAB_BASE", new Habilidad(
                 "HAB_BASE", "Entrenamiento Básico",
@@ -52,7 +52,7 @@ namespace GrafosEST2
 
             Grafo.AgregarNodo("HAB_GENERADOR", new Habilidad(
                 "HAB_GENERADOR", "Generador de Energía",
-                "Reduce el costo de construcción de todas las torres en 15 de oro.",
+                "Aumenta un 25% el oro obtenido al completar cada oleada.",
                 1, 1, "Economía"
             ));
 
@@ -65,25 +65,25 @@ namespace GrafosEST2
             // --- NIVEL 2 ---
             Grafo.AgregarNodo("HAB_CALIBRE_PESADO", new Habilidad(
                 "HAB_CALIBRE_PESADO", "Calibre Pesado",
-                "Aumenta el daño base de todas las torres en un 40%.",
+                "Aumenta el daño base de todas las torres en un 30%.",
                 2, 2, "Ofensiva"
             ));
 
             Grafo.AgregarNodo("HAB_DISPARO_CRITICO", new Habilidad(
                 "HAB_DISPARO_CRITICO", "Disparo Crítico",
-                "25% de probabilidad de infligir daño crítico x2.5 en cada disparo.",
+                "25% de probabilidad de infligir daño crítico x2 en cada disparo.",
                 2, 2, "Ofensiva"
             ));
 
             Grafo.AgregarNodo("HAB_CAZA_RECOMPENSAS", new Habilidad(
                 "HAB_CAZA_RECOMPENSAS", "Cazador de Recompensas",
-                "Cada enemigo derrotado otorga un +50% más de oro al jugador.",
+                "Cada enemigo derrotado otorga +35% de oro y +25% de experiencia.",
                 2, 2, "Economía"
             ));
 
             Grafo.AgregarNodo("HAB_TORRE_HIELO", new Habilidad(
-                "HAB_TORRE_HIELO", "Torre Criogénica",
-                "Permite desplegar torres de hielo que ralentizan a los enemigos un 45%.",
+                "HAB_TORRE_HIELO", "Munición Criogénica",
+                "Todas las torres ralentizan un 20% al impactar y las Criogénicas ganan +10% de frenado.",
                 2, 2, "Control"
             ));
 
@@ -96,40 +96,83 @@ namespace GrafosEST2
             // --- NIVEL 3 ---
             Grafo.AgregarNodo("HAB_CANON_AREA", new Habilidad(
                 "HAB_CANON_AREA", "Torre de Fragmentación",
-                "Habilita torretas de cañón con daño de área explosivo (Splash) a grupos.",
+                "Amplía el radio de explosión de los Cañones de Área de 1.6 a 2.4 unidades.",
                 3, 3, "Ofensiva"
             ));
 
             Grafo.AgregarNodo("HAB_VENTISCA", new Habilidad(
                 "HAB_VENTISCA", "Ventisca Prolongada",
-                "Aumenta el alcance de las torres de hielo y la ralentización dura 4 segundos.",
+                "+20% de alcance en torres Criogénicas y la ralentización dura 4 segundos.",
                 3, 3, "Control"
             ));
 
             Grafo.AgregarNodo("HAB_TORRE_LASER", new Habilidad(
                 "HAB_TORRE_LASER", "Torre Láser Perforante",
-                "Torreta de haz continuo de alto impacto. Derrite blindajes enemigos.",
+                "El Haz Láser inflige +30% de daño y derrite escudos enemigos.",
                 3, 3, "Ofensiva"
             ));
 
             Grafo.AgregarNodo("HAB_PULSO_EMP", new Habilidad(
-                "HAB_PULSO_EMP", "Pulso de Emergencia EMP",
-                "Si la base baja del 35% de vida, emite un pulso que aturde a todos los enemigos.",
+                "HAB_PULSO_EMP", "Pulso EMP Criogénico",
+                "HABILIDAD ACTIVA: congela a todos los enemigos 3.5s y destruye sus escudos.",
                 3, 3, "Defensiva"
             ));
 
             // --- NIVEL 4 ---
             Grafo.AgregarNodo("HAB_CERO_ABSOLUTO", new Habilidad(
                 "HAB_CERO_ABSOLUTO", "Cero Absoluto",
-                "20% de probabilidad de congelar y detener en seco a un enemigo por 1.5s.",
+                "Las torres Criogénicas tienen 20% de probabilidad de congelar al enemigo por 1.5s.",
                 4, 4, "Control"
             ));
 
             // --- NIVEL 5 (Habilidad Definitiva - Cúspide del DAG) ---
             Grafo.AgregarNodo("HAB_SOBRECARGA", new Habilidad(
                 "HAB_SOBRECARGA", "Sobrecarga de Red Definitiva",
-                "Habilidad suprema: duplica el daño y la cadencia de todas las torres por 10s.",
+                "HABILIDAD ACTIVA: +50% de daño y doble cadencia en toda la red MST durante 10s.",
                 5, 5, "Definitiva"
+            ));
+
+            // --- EXPANSIÓN: 7 HABILIDADES ADICIONALES (22 en total) ---
+            Grafo.AgregarNodo("HAB_BARRICADA", new Habilidad(
+                "HAB_BARRICADA", "Barricada Táctica (Dijkstra)",
+                "HABILIDAD ACTIVA: bloquea un tramo del camino 15s; Dijkstra recalcula y desvía a los enemigos.",
+                2, 2, "Control"
+            ));
+
+            Grafo.AgregarNodo("HAB_INGENIERIA", new Habilidad(
+                "HAB_INGENIERIA", "Ingeniería Avanzada",
+                "Las mejoras de torre (Nivel 2 y 3) cuestan un 20% menos.",
+                2, 2, "Economía"
+            ));
+
+            Grafo.AgregarNodo("HAB_RED_RADAR", new Habilidad(
+                "HAB_RED_RADAR", "Enlace de Radar",
+                "+1.5 de radio de enlace en la red MST y el tope de sinergia sube de 35% a 50%.",
+                2, 3, "Economía"
+            ));
+
+            Grafo.AgregarNodo("HAB_RECICLAJE", new Habilidad(
+                "HAB_RECICLAJE", "Reciclaje de Chatarra",
+                "Vender una torre devuelve el 85% del oro invertido en lugar del 70%.",
+                2, 3, "Economía"
+            ));
+
+            Grafo.AgregarNodo("HAB_ARCO_VOLTAICO", new Habilidad(
+                "HAB_ARCO_VOLTAICO", "Arco Voltaico",
+                "La Bobina Tesla encadena 2 rebotes adicionales (recorrido BFS más profundo).",
+                3, 3, "Ofensiva"
+            ));
+
+            Grafo.AgregarNodo("HAB_BOMBARDEO", new Habilidad(
+                "HAB_BOMBARDEO", "Bombardeo Orbital",
+                "HABILIDAD ACTIVA: lluvia de proyectiles explosivos sobre todos los enemigos en pantalla.",
+                3, 4, "Ofensiva"
+            ));
+
+            Grafo.AgregarNodo("HAB_FOCO_LASER", new Habilidad(
+                "HAB_FOCO_LASER", "Foco Sostenido",
+                "El daño del Haz Láser escala hasta x3 (en vez de x2) al mantener el mismo objetivo.",
+                3, 4, "Ofensiva"
             ));
 
             // La habilidad básica siempre empieza desbloqueada
@@ -162,6 +205,16 @@ namespace GrafosEST2
             Grafo.AgregarArista("HAB_TORRE_LASER", "HAB_SOBRECARGA", 1f);
             Grafo.AgregarArista("HAB_CERO_ABSOLUTO", "HAB_SOBRECARGA", 1f);
             Grafo.AgregarArista("HAB_REPARACION_AUTO", "HAB_SOBRECARGA", 1f);
+
+            // Aristas de la expansión (se mantiene la propiedad de DAG: sin ciclos)
+            Grafo.AgregarArista("HAB_ESCUDO_BASE", "HAB_BARRICADA", 1f);
+            Grafo.AgregarArista("HAB_GENERADOR", "HAB_INGENIERIA", 1f);
+            Grafo.AgregarArista("HAB_INGENIERIA", "HAB_RED_RADAR", 1f);
+            Grafo.AgregarArista("HAB_CAZA_RECOMPENSAS", "HAB_RECICLAJE", 1f);
+            Grafo.AgregarArista("HAB_DISPARO_CRITICO", "HAB_ARCO_VOLTAICO", 1f);
+            Grafo.AgregarArista("HAB_CANON_AREA", "HAB_BOMBARDEO", 1f);
+            Grafo.AgregarArista("HAB_TORRE_LASER", "HAB_FOCO_LASER", 1f);
+            Grafo.AgregarArista("HAB_TORRE_HIELO", "HAB_PULSO_EMP", 1f);
         }
 
         /// <summary>

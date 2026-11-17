@@ -43,14 +43,19 @@ namespace GrafosEST2
         private Dictionary<string, Button> botonesFiltro = new Dictionary<string, Button>();
         private Text txtProgresoArmeria;
 
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        private static void AutoInicializarEnEscena()
+        /// <summary>Crea el sistema de habilidades si la escena no lo tiene (lo invoca ArranqueJuego).</summary>
+        public static ControladorHabilidadesUI Asegurar()
         {
-            if (FindFirstObjectByType<ControladorHabilidadesUI>() == null)
-            {
-                GameObject host = new GameObject("SistemaHabilidadesDAG");
-                host.AddComponent<ControladorHabilidadesUI>();
-            }
+            if (Instance != null) return Instance;
+            ControladorHabilidadesUI existente = FindFirstObjectByType<ControladorHabilidadesUI>();
+            if (existente != null) return existente;
+            GameObject host = new GameObject("SistemaHabilidadesDAG");
+            return host.AddComponent<ControladorHabilidadesUI>();
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this) Instance = null;
         }
 
         private void Awake()
@@ -131,11 +136,12 @@ namespace GrafosEST2
         {
             if (textoInfoJugador == null || jugadorActivo == null) return;
 
-            int total = 15;
+            int total = 0;
             int desbloqueadas = 0;
             if (sistemaHabilidades != null)
             {
                 var todas = sistemaHabilidades.ObtenerTodasLasHabilidades();
+                total = todas.Count;
                 for (int i = 0; i < todas.Count; i++)
                 {
                     if (todas[i].desbloqueada || (jugadorActivo != null && jugadorActivo.TieneHabilidad(todas[i].id)))
@@ -404,6 +410,7 @@ namespace GrafosEST2
                 if (TowerDefenseGameplay.GameManager.Instance != null)
                 {
                     TowerDefenseGameplay.GameManager.Instance.MostrarNotificacion($"⚡ ¡Mejora activada: {mensaje}!");
+                    TowerDefenseGameplay.GameManager.Instance.OnHabilidadDesbloqueada();
                 }
                 ActualizarTodo();
             }
@@ -863,9 +870,10 @@ namespace GrafosEST2
             textoConsolaFeedback.supportRichText = true;
             textoConsolaFeedback.text = "Sistema DAG activo.";
 
-            // Ocultar por defecto para priorizar estética de videojuego
-            panelAcademico.SetActive(false);
-            consolaObj.SetActive(false);
+            // Panel de demostración académica visible por defecto (Kahn, Matriz, Detección de Ciclos)
+            panelAcademico.SetActive(true);
+            consolaObj.SetActive(true);
+            leScroll.preferredHeight = 380;
 
             // Botón discreto en la barra inferior para sustentar o inspeccionar si el profesor lo requiere
             Button btnToggleInspector = CrearBoton(barraInferior.transform, "BtnToggleInspector", "🔬 Consola DAG", new Color(0.22f, 0.25f, 0.32f, 0.85f), fuenteUI);

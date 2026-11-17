@@ -437,6 +437,184 @@ namespace GrafosEST2
 
         #endregion
 
+        #region Caminos Mínimos (Dijkstra) y Árbol de Expansión Mínima (Kruskal)
+
+        /// <summary>
+        /// Algoritmo de Dijkstra desde un vértice origen. Requiere pesos no negativos.
+        /// Devuelve las distancias mínimas, los predecesores y el orden en que se fijaron los vértices.
+        /// Complejidad: O(V^2) con extracción lineal del mínimo (adecuado para grafos pequeños).
+        /// </summary>
+        public List<string> Dijkstra(string idInicio, out Dictionary<string, float> distancias, out Dictionary<string, string> previos)
+        {
+            distancias = new Dictionary<string, float>();
+            previos = new Dictionary<string, string>();
+            List<string> ordenFijado = new List<string>();
+            if (!ExisteNodo(idInicio)) return ordenFijado;
+
+            HashSet<string> pendientes = new HashSet<string>();
+            foreach (string id in Nodos.Keys)
+            {
+                distancias[id] = float.MaxValue;
+                pendientes.Add(id);
+            }
+            distancias[idInicio] = 0f;
+
+            while (pendientes.Count > 0)
+            {
+                // Extraer el vértice pendiente con menor distancia tentativa
+                string actual = null;
+                float mejor = float.MaxValue;
+                foreach (string id in pendientes)
+                {
+                    if (distancias[id] < mejor)
+                    {
+                        mejor = distancias[id];
+                        actual = id;
+                    }
+                }
+                if (actual == null) break; // el resto es inalcanzable
+
+                pendientes.Remove(actual);
+                ordenFijado.Add(actual);
+
+                // Relajación de aristas salientes
+                NodoGrafo<T> nodo = Nodos[actual];
+                for (int i = 0; i < nodo.Vecinos.Count; i++)
+                {
+                    Arista<T> arista = nodo.Vecinos[i];
+                    string v = arista.Destino.Id;
+                    if (!pendientes.Contains(v)) continue;
+                    float nueva = distancias[actual] + Math.Max(0f, arista.Peso);
+                    if (nueva < distancias[v])
+                    {
+                        distancias[v] = nueva;
+                        previos[v] = actual;
+                    }
+                }
+            }
+
+            return ordenFijado;
+        }
+
+        /// <summary>
+        /// Camino mínimo entre dos vértices. Retorna null si el destino es inalcanzable.
+        /// </summary>
+        public List<string> CaminoMinimo(string idInicio, string idFin, out float costo)
+        {
+            costo = float.MaxValue;
+            if (!ExisteNodo(idInicio) || !ExisteNodo(idFin)) return null;
+
+            Dijkstra(idInicio, out Dictionary<string, float> dist, out Dictionary<string, string> prev);
+            if (dist[idFin] == float.MaxValue) return null;
+
+            costo = dist[idFin];
+            List<string> camino = new List<string>();
+            string actual = idFin;
+            camino.Add(actual);
+            while (prev.ContainsKey(actual))
+            {
+                actual = prev[actual];
+                camino.Insert(0, actual);
+            }
+            return camino;
+        }
+
+        /// <summary>
+        /// Arista simple (u, v, peso) usada por Kruskal.
+        /// </summary>
+        public struct AristaSimple
+        {
+            public string U;
+            public string V;
+            public float Peso;
+        }
+
+        /// <summary>
+        /// Lista las aristas del grafo. En grafos no dirigidos cada par aparece una sola vez.
+        /// </summary>
+        public List<AristaSimple> ObtenerAristas()
+        {
+            List<AristaSimple> lista = new List<AristaSimple>();
+            HashSet<string> vistos = new HashSet<string>();
+            foreach (var kvp in Nodos)
+            {
+                for (int i = 0; i < kvp.Value.Vecinos.Count; i++)
+                {
+                    string u = kvp.Key;
+                    string v = kvp.Value.Vecinos[i].Destino.Id;
+                    if (!EsDirigido)
+                    {
+                        string clave = string.CompareOrdinal(u, v) < 0 ? u + "|" + v : v + "|" + u;
+                        if (!vistos.Add(clave)) continue;
+                    }
+                    lista.Add(new AristaSimple { U = u, V = v, Peso = kvp.Value.Vecinos[i].Peso });
+                }
+            }
+            return lista;
+        }
+
+        /// <summary>
+        /// Algoritmo de Kruskal con Union-Find. Trata las aristas como no dirigidas.
+        /// Si el grafo no es conexo devuelve un bosque de expansión mínima.
+        /// Complejidad: O(E log E).
+        /// </summary>
+        public List<AristaSimple> KruskalMST(out float pesoTotal, out List<AristaSimple> descartadas)
+        {
+            pesoTotal = 0f;
+            descartadas = new List<AristaSimple>();
+            List<AristaSimple> mst = new List<AristaSimple>();
+
+            List<string> ids = new List<string>(Nodos.Keys);
+            Dictionary<string, int> indice = new Dictionary<string, int>();
+            DisjointSet uf = new DisjointSet();
+            for (int i = 0; i < ids.Count; i++)
+            {
+                indice[ids[i]] = i;
+                uf.MakeSet(i);
+            }
+
+            List<AristaSimple> aristas = ObtenerAristas();
+            aristas.Sort((a, b) => a.Peso.CompareTo(b.Peso));
+
+            for (int i = 0; i < aristas.Count; i++)
+            {
+                if (uf.Union(indice[aristas[i].U], indice[aristas[i].V]))
+                {
+                    mst.Add(aristas[i]);
+                    pesoTotal += aristas[i].Peso;
+                }
+                else
+                {
+                    descartadas.Add(aristas[i]); // formaría ciclo
+                }
+            }
+            return mst;
+        }
+
+        /// <summary>
+        /// Representación textual de la Lista de Adyacencia.
+        /// </summary>
+        public string ListaAdyacenciaToString()
+        {
+            if (Nodos.Count == 0) return "El grafo no contiene vértices.";
+            StringBuilder sb = new StringBuilder();
+            foreach (var kvp in Nodos)
+            {
+                sb.Append(kvp.Key).Append(" → ");
+                if (kvp.Value.Vecinos.Count == 0) sb.Append("∅");
+                for (int i = 0; i < kvp.Value.Vecinos.Count; i++)
+                {
+                    Arista<T> a = kvp.Value.Vecinos[i];
+                    sb.Append(a.Destino.Id).Append('(').Append(a.Peso.ToString("0.#")).Append(')');
+                    if (i < kvp.Value.Vecinos.Count - 1) sb.Append(", ");
+                }
+                sb.AppendLine();
+            }
+            return sb.ToString();
+        }
+
+        #endregion
+
         #region Representación en Matriz de Adyacencia
 
         /// <summary>

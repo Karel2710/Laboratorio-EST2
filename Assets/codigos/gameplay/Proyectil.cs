@@ -1,14 +1,15 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace TowerDefenseGameplay
 {
     /// <summary>
     /// Proyectil disparado por las torres hacia los enemigos.
-    /// Soporta daño base, impactos críticos y ralentización criogénica (habilidad DAG).
+    /// Soporta impacto directo, daño crítico, ralentización, congelación total y daño en área.
     /// </summary>
     public class Proyectil : MonoBehaviour
     {
-        public float velocidad = 12f;
+        public float velocidad = 13f;
         public float danio = 20f;
         public bool esCritico = false;
         public bool aplicaRalentizacion = false;
@@ -17,10 +18,16 @@ namespace TowerDefenseGameplay
         public bool esAreaSplash = false;
         public float radioSplash = 1.6f;
         public bool congelacionTotal = false;
+        public TipoDanio tipoDanio = TipoDanio.Cinetico;
+        public Color colorEstela = new Color(1f, 0.6f, 0.2f);
 
         private Enemigo objetivo;
         private Vector3 ultimaPosicionConocida;
         private SpriteRenderer spriteRenderer;
+        private TrailRenderer estela;
+        private bool impacto = false;
+        private Transform municion3D;   // flecha o bala de cañón del kit Kenney en la vista 2.5D
+        private float escalaVisual = 1f;
 
         public void Configurar(Enemigo target, float danioBase, bool critico, bool ralentizar, bool splash = false, bool congelar = false)
         {
@@ -31,136 +38,172 @@ namespace TowerDefenseGameplay
             esAreaSplash = splash;
             congelacionTotal = congelar;
 
-            if (objetivo != null)
-            {
-                ultimaPosicionConocida = objetivo.transform.position;
-            }
+            if (objetivo != null) ultimaPosicionConocida = objetivo.PuntoImpacto;
+            else ultimaPosicionConocida = transform.position;
 
-            AsegurarSprite();
+            AsegurarVisuales();
         }
 
-        private void Awake()
+        /// <summary>Proyectil dirigido a un punto fijo (Bombardeo Orbital).</summary>
+        public void ConfigurarHaciaPunto(Vector3 destino, float danioBase, float radio)
         {
-            AsegurarSprite();
+            objetivo = null;
+            ultimaPosicionConocida = destino;
+            danio = danioBase;
+            esAreaSplash = true;
+            radioSplash = radio;
+            tipoDanio = TipoDanio.Explosivo;
+            velocidad = 20f;
+            AsegurarVisuales();
         }
 
-        private void AsegurarSprite()
+        private void AsegurarVisuales()
         {
             if (spriteRenderer == null)
             {
-                spriteRenderer = GetComponent<SpriteRenderer>();
-                if (spriteRenderer == null)
-                {
-                    spriteRenderer = gameObject.AddComponent<SpriteRenderer>();
-                    spriteRenderer.sprite = CrearSpriteProyectil();
-                    spriteRenderer.sortingOrder = 15;
-                }
+                spriteRenderer = gameObject.AddComponent<SpriteRenderer>();
+                spriteRenderer.sprite = GraficosProc.Circulo;
+                spriteRenderer.sortingOrder = 15;
             }
 
-            // Colorear según tipo de proyectil
-            if (congelacionTotal)
+            Color color;
+            float escala;
+            if (congelacionTotal) { color = new Color(0.1f, 0.95f, 1f); escala = 0.24f; }
+            else if (tipoDanio == TipoDanio.Hielo) { color = new Color(0.3f, 0.85f, 1f); escala = 0.2f; }
+            else if (esAreaSplash) { color = new Color(1f, 0.35f, 0.1f); escala = 0.3f; }
+            else if (esCritico) { color = new Color(1f, 0.85f, 0.1f); escala = 0.24f; }
+            else { color = new Color(1f, 0.6f, 0.25f); escala = 0.17f; }
+
+            spriteRenderer.color = color;
+            transform.localScale = Vector3.one * escala;
+            escalaVisual = escala;
+            ActualizarMunicion3D();
+
+            // Estela luminosa
+            if (estela == null)
             {
-                spriteRenderer.color = new Color(0.1f, 0.95f, 1f); // Cian helado intenso
-                transform.localScale = Vector3.one * 0.45f;
+                estela = gameObject.AddComponent<TrailRenderer>();
+                estela.sharedMaterial = GraficosProc.MaterialLinea;
+                estela.time = 0.16f;
+                estela.minVertexDistance = 0.05f;
+                estela.sortingOrder = 14;
+                estela.numCapVertices = 2;
+                estela.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             }
-            else if (aplicaRalentizacion)
-            {
-                spriteRenderer.color = new Color(0.3f, 0.85f, 1f); // Azul frío
-                transform.localScale = Vector3.one * 0.35f;
-            }
-            else if (esAreaSplash)
-            {
-                spriteRenderer.color = new Color(1f, 0.35f, 0.1f); // Bomba de cañón
-                transform.localScale = Vector3.one * 0.55f;
-            }
-            else if (esCritico)
-            {
-                spriteRenderer.color = new Color(1f, 0.85f, 0.1f); // Dorado crítico
-                transform.localScale = Vector3.one * 0.45f;
-            }
-            else
-            {
-                spriteRenderer.color = new Color(1f, 0.5f, 0.2f); // Naranja energía
-                transform.localScale = Vector3.one * 0.3f;
-            }
+            estela.startWidth = escala * 0.8f;
+            estela.endWidth = 0f;
+            estela.startColor = new Color(color.r, color.g, color.b, 0.85f);
+            estela.endColor = new Color(color.r, color.g, color.b, 0f);
         }
 
         private void Update()
         {
-            if (objetivo != null)
-            {
-                ultimaPosicionConocida = objetivo.transform.position;
-            }
+            if (impacto) return;
 
-            Vector3 direccion = (ultimaPosicionConocida - transform.position);
+            if (objetivo != null && !objetivo.EstaMuerto) ultimaPosicionConocida = objetivo.PuntoImpacto;
+
+            Vector3 direccion = ultimaPosicionConocida - transform.position;
             float distanciaPaso = velocidad * Time.deltaTime;
 
-            if (direccion.magnitude <= distanciaPaso || direccion.magnitude <= 0.2f)
+            if (direccion.magnitude <= distanciaPaso || direccion.magnitude <= 0.15f)
             {
+                transform.position = ultimaPosicionConocida;
                 Impactar();
                 return;
             }
 
             transform.position += direccion.normalized * distanciaPaso;
+            transform.rotation = Vista25D.Activa ? Vista25D.RotacionCartel : Quaternion.Euler(0, 0, Mathf.Atan2(direccion.y, direccion.x) * Mathf.Rad2Deg);
 
-            // Orientar proyectil
-            float angulo = Mathf.Atan2(direccion.y, direccion.x) * Mathf.Rad2Deg;
-            transform.rotation = Quaternion.Euler(0, 0, angulo);
+            if (municion3D != null && municion3D.gameObject.activeSelf != Vista25D.Activa) ActualizarMunicion3D();
+            if (municion3D != null && Vista25D.Activa && direccion.sqrMagnitude > 0.0001f)
+            {
+                // La punta mira hacia donde vuela; "arriba" del modelo = altura (-Z del mundo)
+                municion3D.rotation = Quaternion.LookRotation(direccion.normalized, Vector3.back);
+            }
+        }
+
+        /// <summary>
+        /// En 2.5D los disparos cinéticos son flechas y los de área balas de cañón (modelos Kenney);
+        /// el hielo y la congelación siguen siendo orbes luminosos. En 2D vuelve el sprite.
+        /// </summary>
+        private void ActualizarMunicion3D()
+        {
+            bool aplica = !congelacionTotal && tipoDanio != TipoDanio.Hielo && (esAreaSplash || tipoDanio == TipoDanio.Cinetico);
+            bool usar = aplica && Vista25D.Activa;
+            if (usar && municion3D == null)
+            {
+                GameObject go = new GameObject("Municion3D");
+                go.transform.SetParent(transform, false);
+                string ruta = Recursos25D.TD + (esAreaSplash ? "weapon-ammo-cannonball" : "weapon-ammo-arrow");
+                Transform m = Recursos25D.CrearModelo(ruta, go.transform, Vector3.zero, Vector3.one);
+                if (m == null || !Recursos25D.Limites(m, go.transform, out Bounds b))
+                {
+                    Destroy(go);
+                    usar = false;
+                }
+                else
+                {
+                    float mayor = Mathf.Max(b.size.x, Mathf.Max(b.size.y, b.size.z));
+                    float f = (esAreaSplash ? 0.24f : 0.42f) / Mathf.Max(0.0001f, mayor);
+                    m.localScale = Vector3.one * f;
+                    m.localPosition = new Vector3(0f, -b.size.y * f * 0.5f, 0f); // centrado en la trayectoria
+                    municion3D = go.transform;
+                }
+            }
+            if (municion3D != null)
+            {
+                municion3D.localScale = Vector3.one / Mathf.Max(0.01f, escalaVisual);
+                municion3D.gameObject.SetActive(usar);
+            }
+            if (spriteRenderer != null) spriteRenderer.enabled = !(usar && municion3D != null);
+        }
+
+        private void AplicarEfectos(Enemigo e, float danioAplicado, bool critico)
+        {
+            if (e == null || e.EstaMuerto) return;
+            // Los estados se aplican antes del daño: el enemigo puede ser destruido al recibirlo
+            if (congelacionTotal) e.Congelar(1.5f);
+            if (aplicaRalentizacion) e.AplicarRalentizacion(porcentajeRalentizacion, duracionRalentizacion);
+            e.RecibirDanio(danioAplicado, critico, tipoDanio);
         }
 
         private void Impactar()
         {
-            float ralentizacionAplicar = congelacionTotal ? 1.0f : porcentajeRalentizacion;
+            impacto = true;
+            EfectosVisualesManager fx = EfectosVisualesManager.Instance;
 
             if (esAreaSplash)
             {
-                // Daño en área (Splash de Artillería)
-                Collider2D[] colisiones = Physics2D.OverlapCircleAll(transform.position, radioSplash);
-                for (int i = 0; i < colisiones.Length; i++)
+                // Daño en área: se copian los afectados porque la lista cambia cuando mueren
+                List<Enemigo> afectados = new List<Enemigo>();
+                List<Enemigo> lista = Enemigo.Activos;
+                for (int i = 0; i < lista.Count; i++)
                 {
-                    Enemigo e = colisiones[i].GetComponent<Enemigo>();
-                    if (e != null)
-                    {
-                        e.RecibirDanio(danio, esCritico);
-                        if (aplicaRalentizacion || congelacionTotal)
-                        {
-                            e.AplicarRalentizacion(ralentizacionAplicar, duracionRalentizacion);
-                        }
-                    }
+                    if (lista[i] != null && Vector2.Distance(transform.position, lista[i].transform.position) <= radioSplash)
+                        afectados.Add(lista[i]);
+                }
+                for (int i = 0; i < afectados.Count; i++)
+                {
+                    float d = Vector2.Distance(transform.position, afectados[i].transform.position);
+                    float atenuacion = Mathf.Lerp(1f, 0.55f, d / Mathf.Max(0.01f, radioSplash));
+                    AplicarEfectos(afectados[i], danio * atenuacion, esCritico);
+                }
+
+                if (fx != null)
+                {
+                    fx.OndaExpansiva(transform.position, radioSplash, new Color(1f, 0.55f, 0.15f), 0.3f);
+                    fx.Explosion(transform.position, new Color(1f, 0.6f, 0.2f), 10, 3.5f);
+                    fx.Sonido(TipoSonido.Explosion);
                 }
             }
             else
             {
-                if (objetivo != null)
-                {
-                    objetivo.RecibirDanio(danio, esCritico);
-                    if (aplicaRalentizacion || congelacionTotal)
-                    {
-                        objetivo.AplicarRalentizacion(ralentizacionAplicar, duracionRalentizacion);
-                    }
-                }
+                AplicarEfectos(objetivo, danio, esCritico);
+                if (fx != null) fx.Explosion(transform.position, spriteRenderer != null ? spriteRenderer.color : Color.white, 3, 1.6f);
             }
 
             Destroy(gameObject);
-        }
-
-        private Sprite CrearSpriteProyectil()
-        {
-            int size = 16;
-            Texture2D tex = new Texture2D(size, size);
-            Vector2 centro = new Vector2(size / 2f, size / 2f);
-            float radio = size / 2f - 1f;
-
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    float dist = Vector2.Distance(new Vector2(x, y), centro);
-                    tex.SetPixel(x, y, dist <= radio ? Color.white : Color.clear);
-                }
-            }
-            tex.Apply();
-            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 16);
         }
     }
 }

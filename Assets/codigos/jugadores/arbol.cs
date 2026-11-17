@@ -44,6 +44,14 @@ public class Arbol
     {
         if (nuevoJugador == null) return false;
 
+        // Modo AVL: inserción recursiva con rebalanceo por rotaciones
+        if (autoBalanceoAVL)
+        {
+            bool insertado = false;
+            root = InsertarAVLRec(root, nuevoJugador, ref insertado);
+            return insertado;
+        }
+
         Nodo nuevoNodo = new Nodo(nuevoJugador);
 
         if (root == null)
@@ -132,6 +140,14 @@ public class Arbol
     /// </summary>
     public bool Eliminar(int data)
     {
+        // Modo AVL: eliminación recursiva con rebalanceo en el camino de regreso
+        if (autoBalanceoAVL)
+        {
+            bool eliminado = false;
+            root = EliminarAVLRec(root, data, ref eliminado);
+            return eliminado;
+        }
+
         Nodo p = root;
         Nodo padre = null;
 
@@ -334,6 +350,181 @@ public class Arbol
         if (actual == null) return 0;
         return 1 + Mathf.Max(AlturaRecursivo(actual.left), AlturaRecursivo(actual.right));
     }
+
+    #region Balanceo AVL (Factor de Equilibrio y Rotaciones)
+
+    /// <summary>Si es true, Insertar/Eliminar mantienen el árbol balanceado (AVL).</summary>
+    public bool autoBalanceoAVL = false;
+
+    /// <summary>Contador de rotaciones aplicadas (para demostrar el costo del balanceo).</summary>
+    public int rotacionesRealizadas = 0;
+
+    /// <summary>Bitácora legible de las rotaciones aplicadas (LL, RR, LR, RL).</summary>
+    public List<string> bitacoraRotaciones = new List<string>();
+
+    public int AlturaNodo(Nodo n)
+    {
+        if (n == null) return 0;
+        return 1 + Mathf.Max(AlturaNodo(n.left), AlturaNodo(n.right));
+    }
+
+    /// <summary>
+    /// Factor de Equilibrio: FE = altura(izq) - altura(der).
+    /// Un árbol es AVL si para todo nodo |FE| &lt;= 1.
+    /// </summary>
+    public int FactorEquilibrio(Nodo n)
+    {
+        if (n == null) return 0;
+        return AlturaNodo(n.left) - AlturaNodo(n.right);
+    }
+
+    public bool EsAVL()
+    {
+        return EsAVLRec(root);
+    }
+
+    private bool EsAVLRec(Nodo n)
+    {
+        if (n == null) return true;
+        if (Mathf.Abs(FactorEquilibrio(n)) > 1) return false;
+        return EsAVLRec(n.left) && EsAVLRec(n.right);
+    }
+
+    // Rotación simple a la derecha (caso Izquierda-Izquierda)
+    private Nodo RotarDerecha(Nodo y)
+    {
+        Nodo x = y.left;
+        y.left = x.right;
+        x.right = y;
+        rotacionesRealizadas++;
+        return x;
+    }
+
+    // Rotación simple a la izquierda (caso Derecha-Derecha)
+    private Nodo RotarIzquierda(Nodo x)
+    {
+        Nodo y = x.right;
+        x.right = y.left;
+        y.left = x;
+        rotacionesRealizadas++;
+        return y;
+    }
+
+    private void Anotar(string texto)
+    {
+        bitacoraRotaciones.Add(texto);
+        if (bitacoraRotaciones.Count > 40) bitacoraRotaciones.RemoveAt(0);
+    }
+
+    /// <summary>Restaura la propiedad AVL en el nodo n aplicando rotación simple o doble.</summary>
+    private Nodo Rebalancear(Nodo n)
+    {
+        if (n == null) return null;
+        int fe = FactorEquilibrio(n);
+
+        if (fe > 1)
+        {
+            if (FactorEquilibrio(n.left) < 0)
+            {
+                // Caso Izquierda-Derecha: rotación doble
+                Anotar($"Rotación doble LR en ID {n.data.Id} (FE=+{fe})");
+                n.left = RotarIzquierda(n.left);
+            }
+            else
+            {
+                Anotar($"Rotación simple derecha (LL) en ID {n.data.Id} (FE=+{fe})");
+            }
+            return RotarDerecha(n);
+        }
+
+        if (fe < -1)
+        {
+            if (FactorEquilibrio(n.right) > 0)
+            {
+                // Caso Derecha-Izquierda: rotación doble
+                Anotar($"Rotación doble RL en ID {n.data.Id} (FE={fe})");
+                n.right = RotarDerecha(n.right);
+            }
+            else
+            {
+                Anotar($"Rotación simple izquierda (RR) en ID {n.data.Id} (FE={fe})");
+            }
+            return RotarIzquierda(n);
+        }
+
+        return n;
+    }
+
+    private Nodo InsertarAVLRec(Nodo n, Jugador j, ref bool insertado)
+    {
+        if (n == null)
+        {
+            insertado = true;
+            return new Nodo(j);
+        }
+
+        if (j.Id == n.data.Id) return n; // clave duplicada
+        if (j.Id < n.data.Id) n.left = InsertarAVLRec(n.left, j, ref insertado);
+        else n.right = InsertarAVLRec(n.right, j, ref insertado);
+
+        return insertado ? Rebalancear(n) : n;
+    }
+
+    private Nodo EliminarAVLRec(Nodo n, int id, ref bool eliminado)
+    {
+        if (n == null) return null;
+
+        if (id < n.data.Id) n.left = EliminarAVLRec(n.left, id, ref eliminado);
+        else if (id > n.data.Id) n.right = EliminarAVLRec(n.right, id, ref eliminado);
+        else
+        {
+            eliminado = true;
+            if (n.left == null) return n.right;
+            if (n.right == null) return n.left;
+
+            // Dos hijos: reemplazo por predecesor in-order (igual que el BST clásico)
+            Nodo pred = n.left;
+            while (pred.right != null) pred = pred.right;
+            n.data = pred.data;
+            bool aux = false;
+            n.left = EliminarAVLRec(n.left, pred.data.Id, ref aux);
+        }
+
+        return Rebalancear(n);
+    }
+
+    /// <summary>
+    /// Convierte el BST actual (posiblemente degenerado) en un AVL balanceado:
+    /// reinserta todos los nodos en pre-orden aplicando rotaciones.
+    /// Retorna la cantidad de rotaciones que fueron necesarias.
+    /// </summary>
+    public int BalancearComoAVL()
+    {
+        List<Jugador> datos = PreOrden();
+        int antes = rotacionesRealizadas;
+        bool previo = autoBalanceoAVL;
+        root = null;
+        autoBalanceoAVL = true;
+        for (int i = 0; i < datos.Count; i++) Insertar(datos[i]);
+        autoBalanceoAVL = previo;
+        return rotacionesRealizadas - antes;
+    }
+
+    /// <summary>Profundidad (nivel) de un ID dentro del árbol; -1 si no existe. Mide el costo de búsqueda.</summary>
+    public int ProfundidadDe(int id)
+    {
+        int nivel = 1;
+        Nodo p = root;
+        while (p != null)
+        {
+            if (id == p.data.Id) return nivel;
+            p = id < p.data.Id ? p.left : p.right;
+            nivel++;
+        }
+        return -1;
+    }
+
+    #endregion
 
     public void Limpiar()
     {
