@@ -38,15 +38,10 @@ namespace TowerDefenseGameplay
 
         private Font fuenteUI;
 
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        private static void AutoInicializarHUD()
-        {
-            if (FindFirstObjectByType<HUDJuego>() == null)
-            {
-                GameObject go = new GameObject("HUDJuego_CanvasHost");
-                go.AddComponent<HUDJuego>();
-            }
-        }
+        // Niveles de dificultad (un jugador) y elementos que cambian según el rol en LAN
+        private Button[] botonesNivel = new Button[3];
+        private Text txtRival;
+        private GameObject barraConstruccion;
 
         private void Awake()
         {
@@ -70,8 +65,44 @@ namespace TowerDefenseGameplay
                 GameManager.Instance.OnNotificacion += MostrarBannerNotificacion;
             }
 
+            AplicarVisibilidadSegunModo();
             ActualizarHUD();
-            MostrarBannerNotificacion("🛡️ Haz clic en los cuadrantes del mapa para colocar defensas 🏹");
+
+            if (ModoJuego.EsAtacanteLocal)
+            {
+                MostrarBannerNotificacion("⚔️ Eres el ATACANTE: elige ruta (A/B/C) y envía tropas con las teclas 1-4.");
+            }
+            else
+            {
+                MostrarBannerNotificacion("🛡️ Haz clic en los cuadrantes del mapa para colocar defensas 🏹");
+            }
+        }
+
+        /// <summary>
+        /// Oculta lo que no corresponde al modo/rol: en LAN no hay niveles ni cambio de comandante,
+        /// y el atacante no ve los controles del defensor (oro, torres, armería, sobrecarga).
+        /// </summary>
+        private void AplicarVisibilidadSegunModo()
+        {
+            bool lan = ModoJuego.EsMultijugador;
+            bool atacante = ModoJuego.EsAtacanteLocal;
+
+            for (int i = 0; i < botonesNivel.Length; i++)
+            {
+                if (botonesNivel[i] != null) botonesNivel[i].gameObject.SetActive(!lan);
+            }
+            if (btnComandantes != null) btnComandantes.gameObject.SetActive(!lan);
+            if (txtRival != null) txtRival.gameObject.SetActive(lan);
+
+            if (atacante)
+            {
+                if (txtOro != null) txtOro.gameObject.SetActive(false);
+                if (txtJugadorXP != null) txtJugadorXP.gameObject.SetActive(false);
+                if (txtPuntosDAG != null) txtPuntosDAG.gameObject.SetActive(false);
+                if (btnHabilidades != null) btnHabilidades.gameObject.SetActive(false);
+                if (btnIniciarOleada != null) btnIniciarOleada.gameObject.SetActive(false);
+                if (barraConstruccion != null) barraConstruccion.SetActive(false);
+            }
         }
 
         private void OnDestroy()
@@ -86,13 +117,27 @@ namespace TowerDefenseGameplay
         private void Update()
         {
             // Actualizar cuenta regresiva suavemente
-            if (GameManager.Instance != null)
+            GameManager gm = GameManager.Instance;
+            if (gm == null || txtOleadaInfo == null) return;
+
+            bool puedeAdelantar = ModoJuego.EsDefensorLocal;
+
+            if (gm.cuentaRegresivaOleada > 0 &&
+                (gm.estado == EstadoJuego.EsperandoInicio || gm.estado == EstadoJuego.OleadaCompletada))
             {
-                if (GameManager.Instance.cuentaRegresivaOleada > 0 &&
-                    (GameManager.Instance.estado == EstadoJuego.EsperandoInicio || GameManager.Instance.estado == EstadoJuego.OleadaCompletada))
+                string nombre = ModoJuego.EsMultijugador ? "Siguiente ronda" : "Siguiente oleada";
+                txtOleadaInfo.text = $"⏳ {nombre} en: <color=#FFDD44>{gm.cuentaRegresivaOleada:0.0}s</color>";
+                if (btnIniciarOleada != null) btnIniciarOleada.gameObject.SetActive(puedeAdelantar);
+            }
+            else if (ModoJuego.EsMultijugador && gm.estado == EstadoJuego.OleadaEnCurso)
+            {
+                if (gm.ventanaEnvioAbierta)
                 {
-                    txtOleadaInfo.text = $"⏳ Siguiente oleada en: <color=#FFDD44>{GameManager.Instance.cuentaRegresivaOleada:0.0}s</color>";
-                    if (btnIniciarOleada != null) btnIniciarOleada.gameObject.SetActive(true);
+                    txtOleadaInfo.text = $"⚔️ Ronda {gm.oleadaActual}/{gm.totalOleadas} | Envío: <color=#FFDD44>{gm.tiempoRondaRestante:0}s</color> | Enemigos: <color=#FF6666>{gm.enemigosRestantesEnOleada}</color>";
+                }
+                else
+                {
+                    txtOleadaInfo.text = $"⚔️ Ronda {gm.oleadaActual}/{gm.totalOleadas} | <color=#AAAAAA>Envío cerrado</color> | Enemigos: <color=#FF6666>{gm.enemigosRestantesEnOleada}</color>";
                 }
             }
         }
@@ -113,21 +158,46 @@ namespace TowerDefenseGameplay
             // 2. Información de Oleada
             if (txtOleadaInfo != null)
             {
-                if (GameManager.Instance.estado == EstadoJuego.GenerandoOleada || GameManager.Instance.estado == EstadoJuego.OleadaEnCurso)
+                if (GameManager.Instance.estado == EstadoJuego.EsperandoJugadores)
+                {
+                    txtOleadaInfo.text = "🌐 Esperando al otro jugador...";
+                    if (btnIniciarOleada != null) btnIniciarOleada.gameObject.SetActive(false);
+                }
+                else if (GameManager.Instance.estado == EstadoJuego.GenerandoOleada || GameManager.Instance.estado == EstadoJuego.OleadaEnCurso)
                 {
                     txtOleadaInfo.text = $"⚔️ Oleada {GameManager.Instance.oleadaActual}/{GameManager.Instance.totalOleadas}  |  Enemigos: <color=#FF6666>{GameManager.Instance.enemigosRestantesEnOleada}</color>";
                     if (btnIniciarOleada != null) btnIniciarOleada.gameObject.SetActive(false);
                 }
                 else if (GameManager.Instance.estado == EstadoJuego.GameOver)
                 {
-                    txtOleadaInfo.text = "<color=#FF4444>💀 DERROTA - Base Destruida</color>";
+                    txtOleadaInfo.text = ModoJuego.EsMultijugador
+                        ? "<color=#FF4444>💀 La base cayó - Gana el atacante</color>"
+                        : "<color=#FF4444>💀 DERROTA - Base Destruida</color>";
                     if (btnIniciarOleada != null) btnIniciarOleada.gameObject.SetActive(false);
                 }
                 else if (GameManager.Instance.estado == EstadoJuego.Victoria)
                 {
-                    txtOleadaInfo.text = "<color=#FFDD44>👑 ¡VICTORIA TOTAL!</color>";
+                    txtOleadaInfo.text = ModoJuego.EsMultijugador
+                        ? "<color=#FFDD44>👑 La base resistió - Gana el defensor</color>"
+                        : "<color=#FFDD44>👑 ¡VICTORIA TOTAL!</color>";
                     if (btnIniciarOleada != null) btnIniciarOleada.gameObject.SetActive(false);
                 }
+            }
+
+            if (txtRival != null && ModoJuego.EsMultijugador)
+            {
+                txtRival.text = $"🛡️ {ModoJuego.NombreDefensor}  vs  ⚔️ {ModoJuego.NombreAtacante}";
+            }
+
+            // Nivel de dificultad seleccionado (un jugador)
+            for (int i = 0; i < botonesNivel.Length; i++)
+            {
+                if (botonesNivel[i] == null) continue;
+                Outline o = botonesNivel[i].GetComponent<Outline>();
+                if (o == null) o = botonesNivel[i].gameObject.AddComponent<Outline>();
+                bool sel = GameManager.Instance.nivelDificultad == i;
+                o.effectColor = sel ? new Color(1f, 0.9f, 0.3f, 1f) : new Color(0f, 0f, 0f, 0f);
+                o.effectDistance = sel ? new Vector2(2, -2) : Vector2.zero;
             }
 
             // 3. Oro
@@ -151,10 +221,10 @@ namespace TowerDefenseGameplay
                 txtPuntosDAG.text = $"💎 Pts DAG: <color=#44FF88><b>{pts}</b></color>{aviso}";
             }
 
-            // 6. Botón de Sobrecarga
+            // 6. Botón de Sobrecarga (solo lo usa el defensor)
             if (btnSobrecarga != null)
             {
-                bool tieneSobrecarga = GameManager.Instance.TieneHabilidadDAG("HAB_SOBRECARGA");
+                bool tieneSobrecarga = GameManager.Instance.TieneHabilidadDAG("HAB_SOBRECARGA") && ModoJuego.EsDefensorLocal;
                 btnSobrecarga.gameObject.SetActive(tieneSobrecarga);
             }
 
@@ -238,10 +308,7 @@ namespace TowerDefenseGameplay
             btnIniciarOleada = CrearBotonHUD(barraTop.transform, "BtnIniciarOleada", "▶ Iniciar Oleada", new Color(0.2f, 0.65f, 0.35f), 125);
             btnIniciarOleada.onClick.AddListener(() =>
             {
-                if (GameManager.Instance != null)
-                {
-                    GameManager.Instance.IniciarOleada();
-                }
+                ComandosJugador.IniciarOleadaYa();
             });
 
             // Botón Único de Acceso a la Armería y Árbol de Talentos (DAG)
@@ -264,51 +331,39 @@ namespace TowerDefenseGameplay
                 }
             });
 
-            // Botones de Selección de Dificultad / Nivel (flujo horizontal sin superposición)
-            Button btnNivel1 = CrearBotonHUD(barraTop.transform, "BtnNivel1", "Nivel 1", new Color(0.15f, 0.52f, 0.25f), 75);
-            btnNivel1.onClick.AddListener(() =>
+            // Botones de Selección de Dificultad / Nivel (solo un jugador, antes de la primera oleada)
+            string[] nombresNivel = { "Nivel 1", "Nivel 2", "Nivel 3" };
+            Color[] coloresNivel = { new Color(0.15f, 0.52f, 0.25f), new Color(0.78f, 0.48f, 0.08f), new Color(0.78f, 0.18f, 0.18f) };
+            for (int n = 0; n < 3; n++)
             {
-                if (EnemySpawner.instance != null)
+                int indiceNivel = n;
+                botonesNivel[n] = CrearBotonHUD(barraTop.transform, $"BtnNivel{n + 1}", nombresNivel[n], coloresNivel[n], 75);
+                botonesNivel[n].onClick.AddListener(() =>
                 {
-                    EnemySpawner.instance.CargarConfiguracionNivel(0);
-                    MostrarBannerNotificacion("🗺️ Nivel 1 cargado");
-                }
-            });
-
-            Button btnNivel2 = CrearBotonHUD(barraTop.transform, "BtnNivel2", "Nivel 2", new Color(0.78f, 0.48f, 0.08f), 75);
-            btnNivel2.onClick.AddListener(() =>
-            {
-                if (EnemySpawner.instance != null)
-                {
-                    EnemySpawner.instance.CargarConfiguracionNivel(1);
-                    MostrarBannerNotificacion("🗺️ Nivel 2 cargado");
-                }
-            });
-
-            Button btnNivel3 = CrearBotonHUD(barraTop.transform, "BtnNivel3", "Nivel 3", new Color(0.78f, 0.18f, 0.18f), 75);
-            btnNivel3.onClick.AddListener(() =>
-            {
-                if (EnemySpawner.instance != null)
-                {
-                    EnemySpawner.instance.CargarConfiguracionNivel(2);
-                    MostrarBannerNotificacion("🗺️ Nivel 3 cargado");
-                }
-            });
+                    if (GameManager.Instance != null)
+                    {
+                        GameManager.Instance.ConfigurarNivel(indiceNivel);
+                        ActualizarHUD();
+                    }
+                });
+            }
 
             // Botón Habilidad Definitiva Sobrecarga
             btnSobrecarga = CrearBotonHUD(barraTop.transform, "BtnSobrecarga", "⚡ Sobrecarga", new Color(0.85f, 0.35f, 0.15f), 115);
             btnSobrecarga.onClick.AddListener(() =>
             {
-                if (GameManager.Instance != null)
-                {
-                    GameManager.Instance.ActivarSobrecargaRed();
-                }
+                ComandosJugador.ActivarSobrecarga();
             });
             btnSobrecarga.gameObject.SetActive(false); // Se activa si se desbloquea en DAG
+
+            // Nombres de los comandantes en LAN
+            txtRival = CrearTextoHUD(barraTop.transform, "TxtRival", 260);
+            txtRival.gameObject.SetActive(false);
 
             // 2. Barra Inferior de Selección y Construcción Libre de Torres
             GameObject barraConst = new GameObject("BarraConstruccion");
             barraConst.transform.SetParent(canvasObj.transform, false);
+            barraConstruccion = barraConst;
 
             RectTransform rtConst = barraConst.AddComponent<RectTransform>();
             rtConst.anchorMin = new Vector2(0.5f, 0f);

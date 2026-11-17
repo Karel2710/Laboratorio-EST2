@@ -100,17 +100,7 @@ public class ControladorArbolUI : MonoBehaviour
         }
 
         CargarArbolDesdeDisco();
-        AsegurarSistemasDefensa();
         ActualizarEstilosTabs();
-    }
-
-    private void AsegurarSistemasDefensa()
-    {
-        if (FindFirstObjectByType<TowerPlacementManager>() == null)
-        {
-            GameObject managerObj = new GameObject("TowerPlacementManager");
-            managerObj.AddComponent<TowerPlacementManager>();
-        }
     }
 
     /// <summary>
@@ -250,6 +240,13 @@ public class ControladorArbolUI : MonoBehaviour
     private void AsignarJugadorActivo(Jugador j)
     {
         if (j == null) return;
+
+        // En LAN el comandante de cada rol se elige en el menú y no se cambia a mitad de partida
+        if (ModoJuego.EsMultijugador)
+        {
+            MostrarMensajeFeedback("En multijugador el comandante se elige en el menú LAN.", new Color(1f, 0.75f, 0.2f));
+            return;
+        }
 
         if (GameManager.Instance != null)
         {

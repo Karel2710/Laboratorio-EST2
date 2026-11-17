@@ -1,16 +1,21 @@
 ﻿using UnityEngine;
-using UnityEngine.EventSystems;
 
 namespace TowerDefenseGameplay
 {
     /// <summary>
     /// Gestiona las casillas de terreno (Plots) donde el jugador puede colocar torres de defensa.
-    /// Soporta interacción mediante New Input System, Legacy Input y EventSystems.
+    ///
+    /// El clic y el hover los detecta únicamente GameManager (raycast propio). Antes esta clase también
+    /// escuchaba OnMouseDown y OnPointerClick, así que un solo clic llamaba ConstruirTorre hasta 3 veces
+    /// y aparecía el aviso "ya contiene una torre" justo después de construir.
     /// </summary>
-    public class PlotTorre : MonoBehaviour, IPointerClickHandler, IPointerEnterHandler, IPointerExitHandler
+    public class PlotTorre : MonoBehaviour
     {
         public int costoTorre = 50;
         public Torre torreInstanciada = null;
+
+        /// <summary>Posición de la casilla dentro de 'plots'. Identifica la casilla en los mensajes LAN.</summary>
+        public int indiceRed = -1;
 
         private SpriteRenderer spriteRenderer;
         private Color colorOriginal;
@@ -80,48 +85,17 @@ namespace TowerDefenseGameplay
             }
         }
 
-        #region Eventos de Ratón / Legacy Input
-
-        private void OnMouseEnter()
-        {
-            ResaltarHover();
-        }
-
-        private void OnMouseExit()
-        {
-            RestaurarColor();
-        }
-
-        private void OnMouseDown()
-        {
-            ConstruirTorre();
-        }
-
-        #endregion
-
-        #region Eventos de EventSystem / New Input System
-
-        public void OnPointerEnter(PointerEventData eventData)
-        {
-            ResaltarHover();
-        }
-
-        public void OnPointerExit(PointerEventData eventData)
-        {
-            RestaurarColor();
-        }
-
-        public void OnPointerClick(PointerEventData eventData)
-        {
-            if (eventData.button == PointerEventData.InputButton.Left)
-            {
-                ConstruirTorre();
-            }
-        }
-
-        #endregion
-
+        /// <summary>Construye la torre seleccionada actualmente en el GameManager.</summary>
         public bool ConstruirTorre(bool esGratis = false)
+        {
+            TipoTorre tipo = GameManager.Instance != null ? GameManager.Instance.tipoTorreAConstruir : TipoTorre.Basica;
+            return ConstruirTorre(tipo, esGratis);
+        }
+
+        /// <summary>
+        /// Construye una torre del tipo indicado (lógica autoritativa: un jugador o host LAN).
+        /// </summary>
+        public bool ConstruirTorre(TipoTorre tipo, bool esGratis = false)
         {
             if (TieneTorre)
             {
@@ -132,7 +106,6 @@ namespace TowerDefenseGameplay
                 return false;
             }
 
-            TipoTorre tipo = GameManager.Instance != null ? GameManager.Instance.tipoTorreAConstruir : TipoTorre.Basica;
             int costo = GameManager.Instance != null ? GameManager.Instance.ObtenerCostoTorre(tipo) : costoTorre;
 
             if (!esGratis)
@@ -149,19 +122,7 @@ namespace TowerDefenseGameplay
                 GameManager.Instance.GastarOro(costo);
             }
 
-            // Crear objeto de la torre seleccionada
-            GameObject torreObj = new GameObject($"Torre_{tipo}_{name}");
-            torreObj.transform.position = transform.position;
-            torreObj.transform.SetParent(transform, true);
-
-            torreInstanciada = torreObj.AddComponent<Torre>();
-            torreInstanciada.ConfigurarTipo(tipo);
-
-            // ── Integración Red de Energía MST ──────────────────────────────────
-            // Notificar al EnergyNetworkManager para que recalcule el MST con la nueva torre.
-            RedEnergiaMST.EnergyNetworkManager.Instance?.RegistrarTorre(torreObj);
-            // ────────────────────────────────────────────────────────────────────
-
+            CrearObjetoTorre(tipo, soloVisual: false);
             RestaurarColor();
 
             if (GameManager.Instance != null)
@@ -171,6 +132,46 @@ namespace TowerDefenseGameplay
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Cliente LAN: muestra la torre que existe en el host. No dispara ni cobra oro.
+        /// </summary>
+        public void ConstruirTorreVisual(TipoTorre tipo)
+        {
+            if (TieneTorre)
+            {
+                if (torreInstanciada.tipo == tipo) return;
+                QuitarTorreVisual();
+            }
+
+            CrearObjetoTorre(tipo, soloVisual: true);
+        }
+
+        /// <summary>Cliente LAN: quita la torre visual (la torre dejó de existir en el host).</summary>
+        public void QuitarTorreVisual()
+        {
+            if (!TieneTorre) return;
+            RedEnergiaMST.EnergyNetworkManager.Instance?.DesregistrarTorre(torreInstanciada.gameObject);
+            Destroy(torreInstanciada.gameObject);
+            torreInstanciada = null;
+        }
+
+        private void CrearObjetoTorre(TipoTorre tipo, bool soloVisual)
+        {
+            GameObject torreObj = new GameObject($"Torre_{tipo}_{name}");
+            torreObj.transform.position = transform.position;
+            torreObj.transform.SetParent(transform, true);
+
+            torreInstanciada = torreObj.AddComponent<Torre>();
+            torreInstanciada.soloVisual = soloVisual;
+            torreInstanciada.ConfigurarTipo(tipo);
+
+            // ── Integración Red de Energía MST ──────────────────────────────────
+            // Notificar al EnergyNetworkManager para que recalcule el MST con la nueva torre.
+            // (En el cliente LAN también se calcula: así ambos PCs ven los mismos rayos de energía.)
+            RedEnergiaMST.EnergyNetworkManager.Instance?.RegistrarTorre(torreObj);
+            // ────────────────────────────────────────────────────────────────────
         }
 
         /// <summary>

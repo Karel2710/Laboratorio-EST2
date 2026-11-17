@@ -24,6 +24,7 @@ public class enemyMovement : MonoBehaviour
 
     // ─── Modo activo y componentes ───────────────────────────────────────────
     private bool usandoGrafo = false;
+    private bool rutaFija = false; // LAN: la ruta la eligió el atacante y no se reemplaza
     private TowerDefenseGameplay.Enemigo componenteEnemigo;
 
     public void ConfigurarVelocidad(float nuevaVelocidad)
@@ -114,6 +115,8 @@ public class enemyMovement : MonoBehaviour
 
     private void InicializarRuta()
     {
+        if (rutaFija) return;
+
         if (PathGraph.main != null)
         {
             List<PathNode> ruta = PathGraph.main.ObtenerRutaActual();
@@ -131,8 +134,22 @@ public class enemyMovement : MonoBehaviour
 
     public void ActualizarRuta(List<PathNode> nuevaRuta)
     {
+        if (rutaFija) return; // Las rutas elegidas por el atacante no cambian con recálculos globales
         if (nuevaRuta == null || nuevaRuta.Count < 2) return;
         EstablecerRutaGrafo(nuevaRuta);
+    }
+
+    /// <summary>
+    /// Asigna una ruta propia a este enemigo (Ruta A/B/C calculada con Dijkstra).
+    /// El enemigo arranca en el primer nodo y la sigue hasta la base.
+    /// </summary>
+    public void AsignarRuta(List<PathNode> ruta)
+    {
+        if (ruta == null || ruta.Count < 2) return;
+        rutaGrafo = new List<PathNode>(ruta);
+        usandoGrafo = true;
+        rutaFija = true;
+        indiceNodoActual = 0;
     }
 
     private void EstablecerRutaGrafo(List<PathNode> ruta)
@@ -207,6 +224,18 @@ public class enemyMovement : MonoBehaviour
         if (rb != null)
         {
             rb.linearVelocity = Vector2.zero;
+        }
+
+        // Si ya murió (o ya llegó) en este mismo frame, no se cuenta dos veces
+        if (componenteEnemigo != null && componenteEnemigo.EstaMuerto)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        if (componenteEnemigo != null)
+        {
+            componenteEnemigo.Retirar();
         }
 
         if (TowerDefenseGameplay.GameManager.Instance != null)

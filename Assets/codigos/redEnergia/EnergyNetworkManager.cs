@@ -99,7 +99,7 @@ namespace RedEnergiaMST
         /// </summary>
         /// <param name="torreGO">
         ///   GameObject que contiene o es la torre. Puede ser la instancia de
-        ///   <c>TowerDefenseGameplay.Torre</c> o de <c>TowerBehavior</c>.
+        ///   <c>TowerDefenseGameplay.Torre</c>.
         /// </param>
         public void RegistrarTorre(GameObject torreGO)
         {

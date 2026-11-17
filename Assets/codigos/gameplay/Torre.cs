@@ -30,8 +30,47 @@ namespace TowerDefenseGameplay
         private SpriteRenderer srAnillo;
         private SpriteRenderer srCanon;
 
+        [Header("Multijugador LAN")]
+        [Tooltip("Cliente LAN: la torre solo se dibuja (el host es quien dispara de verdad).")]
+        public bool soloVisual = false;
+        private float hackeadaHasta = 0f;
+        private bool hackeadaVisual = false;
+        private bool tinteHackeoAplicado = false;
+
         private float temporizadorDisparo = 0f;
         private Enemigo objetivoActual;
+
+        /// <summary>True mientras la habilidad "Hackeo" del atacante tiene desactivada esta torre.</summary>
+        public bool EstaHackeada => soloVisual ? hackeadaVisual : Time.time < hackeadaHasta;
+
+        /// <summary>
+        /// Alcance real: incluye el bono de la habilidad DAG "Ventisca Prolongada" para torres de hielo.
+        /// (El alcance base lo modifica además la red de energía MST.)
+        /// </summary>
+        public float AlcanceEfectivo
+        {
+            get
+            {
+                float a = alcance;
+                if (tipo == TipoTorre.Hielo && GameManager.Instance != null && GameManager.Instance.TieneHabilidadDAG("HAB_VENTISCA"))
+                {
+                    a *= 1.25f;
+                }
+                return a;
+            }
+        }
+
+        public void Hackear(float duracion)
+        {
+            hackeadaHasta = Mathf.Max(hackeadaHasta, Time.time + duracion);
+            objetivoActual = null;
+        }
+
+        /// <summary>Cliente LAN: refleja el estado de hackeo recibido del host.</summary>
+        public void EstablecerHackeadaVisual(bool hackeada)
+        {
+            hackeadaVisual = hackeada;
+        }
 
         private void Awake()
         {
@@ -82,6 +121,16 @@ namespace TowerDefenseGameplay
 
         private void Update()
         {
+            ActualizarTinteHackeo();
+
+            if (soloVisual)
+            {
+                ApuntarAProxyCercano();
+                return;
+            }
+
+            if (EstaHackeada) return;
+
             BuscarObjetivo();
 
             if (objetivoActual != null)
@@ -99,23 +148,27 @@ namespace TowerDefenseGameplay
 
         private void BuscarObjetivo()
         {
+            float alcanceReal = AlcanceEfectivo;
+
             if (objetivoActual != null)
             {
                 float distActual = Vector2.Distance(transform.position, objetivoActual.transform.position);
-                if (distActual <= alcance)
+                if (distActual <= alcanceReal)
                 {
                     return;
                 }
             }
 
-            Enemigo[] todos = FindObjectsByType<Enemigo>(FindObjectsSortMode.None);
+            // Lista estática de enemigos vivos (evita FindObjectsByType en cada frame de cada torre)
+            List<Enemigo> todos = Enemigo.Activos;
             float menorDistancia = float.MaxValue;
             Enemigo masCercano = null;
 
-            for (int i = 0; i < todos.Length; i++)
+            for (int i = 0; i < todos.Count; i++)
             {
+                if (todos[i] == null || todos[i].EstaMuerto) continue;
                 float dist = Vector2.Distance(transform.position, todos[i].transform.position);
-                if (dist <= alcance && dist < menorDistancia)
+                if (dist <= alcanceReal && dist < menorDistancia)
                 {
                     menorDistancia = dist;
                     masCercano = todos[i];
@@ -168,6 +221,13 @@ namespace TowerDefenseGameplay
                 danioFinal *= 1.50f; // +50% daño por Sobrecarga de Red
             }
 
+            // DAG: Torre Láser Perforante -> el láser derrite blindajes (+50% contra Blindados y Jefes)
+            if (tipo == TipoTorre.Laser && GameManager.Instance != null && GameManager.Instance.TieneHabilidadDAG("HAB_TORRE_LASER") &&
+                (objetivoActual.tipoEnemigo == TipoEnemigo.Blindado || objetivoActual.tipoEnemigo == TipoEnemigo.Jefe))
+            {
+                danioFinal *= 1.5f;
+            }
+
             // Instanciar proyectil
             Vector3 spawnPos = (canonRotatorio != null) ? canonRotatorio.position + canonRotatorio.up * 0.45f : transform.position;
             GameObject projObj = new GameObject("ProyectilTorre");
@@ -179,7 +239,92 @@ namespace TowerDefenseGameplay
                 p.radioSplash = 2.4f; // Expansión de onda de choque DAG
             }
 
+            // DAG: Ventisca Prolongada -> la ralentización dura 4 segundos
+            if (aplicaHielo && GameManager.Instance != null && GameManager.Instance.TieneHabilidadDAG("HAB_VENTISCA"))
+            {
+                p.duracionRalentizacion = 4f;
+            }
+
             p.Configurar(objetivoActual, danioFinal, esCritico, aplicaHielo, esSplash, congela);
+
+            // LAN: el host avisa al cliente para que dibuje el mismo disparo
+            if (ServidorPartida.Instancia != null)
+            {
+                ServidorPartida.Instancia.RegistrarDisparo(this, objetivoActual, esCritico, aplicaHielo, esSplash, congela);
+            }
+        }
+
+        /// <summary>Índice de la casilla donde está la torre (identificador en la red).</summary>
+        public int IndicePlot
+        {
+            get
+            {
+                PlotTorre plot = GetComponentInParent<PlotTorre>();
+                return plot != null ? plot.indiceRed : -1;
+            }
+        }
+
+        /// <summary>Cliente LAN: dispara un proyectil solo visual hacia el enemigo indicado.</summary>
+        public void DispararVisual(Transform objetivo, bool critico, bool hielo, bool splash, bool congela)
+        {
+            if (objetivo == null) return;
+
+            if (canonRotatorio != null)
+            {
+                Vector2 dir = (objetivo.position - transform.position).normalized;
+                float angulo = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg - 90f;
+                canonRotatorio.rotation = Quaternion.Euler(0, 0, angulo);
+            }
+
+            Vector3 spawnPos = (canonRotatorio != null) ? canonRotatorio.position + canonRotatorio.up * 0.45f : transform.position;
+            GameObject projObj = new GameObject("ProyectilVisual");
+            projObj.transform.position = spawnPos;
+            Proyectil p = projObj.AddComponent<Proyectil>();
+            p.ConfigurarVisual(objetivo, critico, hielo, splash, congela);
+        }
+
+        private void ApuntarAProxyCercano()
+        {
+            if (canonRotatorio == null) return;
+
+            EnemigoProxy cercano = null;
+            float menor = AlcanceEfectivo;
+            List<EnemigoProxy> proxies = EnemigoProxy.Activos;
+            for (int i = 0; i < proxies.Count; i++)
+            {
+                if (proxies[i] == null) continue;
+                float d = Vector2.Distance(transform.position, proxies[i].transform.position);
+                if (d <= menor)
+                {
+                    menor = d;
+                    cercano = proxies[i];
+                }
+            }
+
+            if (cercano != null)
+            {
+                Vector2 dir = (cercano.transform.position - transform.position).normalized;
+                float angulo = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg - 90f;
+                canonRotatorio.rotation = Quaternion.Euler(0, 0, angulo);
+            }
+        }
+
+        private void ActualizarTinteHackeo()
+        {
+            bool hackeada = EstaHackeada;
+            if (hackeada == tinteHackeoAplicado) return;
+            tinteHackeoAplicado = hackeada;
+
+            if (hackeada)
+            {
+                if (srBase != null) srBase.color = new Color(0.25f, 0.25f, 0.25f);
+                if (srAnillo != null) srAnillo.color = new Color(0.55f, 1f, 0.35f); // Verde "hackeo"
+                if (srCanon != null) srCanon.color = new Color(0.15f, 0.15f, 0.15f);
+            }
+            else
+            {
+                ActualizarColoresVisuales();
+            }
         }
 
         private float CalcularCadenciaEfectiva()
@@ -303,7 +448,7 @@ namespace TowerDefenseGameplay
         private void OnDrawGizmosSelected()
         {
             Gizmos.color = Color.cyan;
-            Gizmos.DrawWireSphere(transform.position, alcance);
+            Gizmos.DrawWireSphere(transform.position, AlcanceEfectivo);
         }
 
         #endregion

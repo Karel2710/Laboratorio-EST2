@@ -4,7 +4,7 @@ namespace RedEnergiaMST
 {
     /// <summary>
     /// Nodo de la red de energía. Cada torre activa en escena tiene un TowerNode asociado
-    /// que referencia su TowerBehavior o Torre (TowerDefenseGameplay) y expone
+    /// que referencia su Torre (TowerDefenseGameplay) y expone
     /// las estadísticas base para que el EnergyNetworkManager pueda aplicar buffs.
     /// </summary>
     public class TowerNode : MonoBehaviour
@@ -12,9 +12,6 @@ namespace RedEnergiaMST
         // ─── Referencias a componentes de torre ─────────────────────────────────
         /// <summary>Referencia al componente Torre (namespace TowerDefenseGameplay).</summary>
         [HideInInspector] public TowerDefenseGameplay.Torre torreGameplay;
-
-        /// <summary>Referencia al componente TowerBehavior (sistema alternativo de torre).</summary>
-        [HideInInspector] public TowerBehavior torreBehavior;
 
         // ─── Buffs de sinergia de red ────────────────────────────────────────────
         /// <summary>Número de conexiones directas que tiene este nodo en el MST actual.</summary>
@@ -44,7 +41,6 @@ namespace RedEnergiaMST
         {
             // Auto-buscar los componentes de torre en el mismo objeto o en sus hijos
             torreGameplay = GetComponentInChildren<TowerDefenseGameplay.Torre>();
-            torreBehavior  = GetComponentInChildren<TowerBehavior>();
             CachearValoresBase();
         }
 
@@ -59,11 +55,6 @@ namespace RedEnergiaMST
                 danioBaseOriginal = torreGameplay.danioBase;
                 rangoBaseOriginal = torreGameplay.alcance;
             }
-            else if (torreBehavior != null)
-            {
-                danioBaseOriginal = torreBehavior.danoPorDisparo;
-                rangoBaseOriginal = torreBehavior.rangoAtaque;
-            }
         }
 
         /// <summary>
@@ -76,11 +67,6 @@ namespace RedEnergiaMST
             {
                 torreGameplay.danioBase = danioBaseOriginal * multiplicadorDano;
                 torreGameplay.alcance   = rangoBaseOriginal * multiplicadorRango;
-            }
-            else if (torreBehavior != null)
-            {
-                torreBehavior.danoPorDisparo = danioBaseOriginal * multiplicadorDano;
-                torreBehavior.rangoAtaque    = rangoBaseOriginal * multiplicadorRango;
             }
         }
 

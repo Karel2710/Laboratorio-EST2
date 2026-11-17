@@ -43,27 +43,50 @@ namespace GrafosEST2
         private Dictionary<string, Button> botonesFiltro = new Dictionary<string, Button>();
         private Text txtProgresoArmeria;
 
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        private static void AutoInicializarEnEscena()
+        // ── DAG de ataque (multijugador LAN) ─────────────────────────────────────
+        /// <summary>Panel del DAG del atacante. Instance sigue siendo el DAG del defensor.</summary>
+        public static ControladorHabilidadesUI InstanciaAtaque { get; private set; }
+        private static bool siguienteEsAtaque = false;
+        public bool EsArbolAtaque { get; private set; }
+
+        /// <summary>
+        /// Crea el panel del DAG de ataque. Awake corre dentro de AddComponent, por eso
+        /// el tipo de árbol se indica con un flag estático antes de agregar el componente.
+        /// </summary>
+        public static ControladorHabilidadesUI CrearArbolAtaque()
         {
-            if (FindFirstObjectByType<ControladorHabilidadesUI>() == null)
-            {
-                GameObject host = new GameObject("SistemaHabilidadesDAG");
-                host.AddComponent<ControladorHabilidadesUI>();
-            }
+            if (InstanciaAtaque != null) return InstanciaAtaque;
+            siguienteEsAtaque = true;
+            GameObject host = new GameObject("SistemaHabilidadesDAG_Ataque");
+            ControladorHabilidadesUI ctrl = host.AddComponent<ControladorHabilidadesUI>();
+            siguienteEsAtaque = false;
+            return ctrl;
         }
 
         private void Awake()
         {
-            if (Instance == null)
+            EsArbolAtaque = siguienteEsAtaque;
+            siguienteEsAtaque = false;
+
+            if (EsArbolAtaque)
             {
-                Instance = this;
+                InstanciaAtaque = this;
+                sistemaHabilidades = new GrafoHabilidades(TipoArbolHabilidades.Ataque);
+                jugadorActivo = new Jugador(100, TowerDefenseGameplay.ModoJuego.IdAtacante, TowerDefenseGameplay.ModoJuego.NombreAtacante, 1, 0);
+                sistemaHabilidades.SincronizarConJugador(jugadorActivo);
             }
+            else
+            {
+                if (Instance == null)
+                {
+                    Instance = this;
+                }
 
-            sistemaHabilidades = new GrafoHabilidades();
+                sistemaHabilidades = new GrafoHabilidades();
 
-            // Intentar enlazar con jugador del árbol BST existente o crear uno de prueba
-            InicializarJugadorActivo();
+                // Intentar enlazar con jugador del árbol BST existente o crear uno de prueba
+                InicializarJugadorActivo();
+            }
 
             fuenteUI = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             if (fuenteUI == null) fuenteUI = Resources.GetBuiltinResource<Font>("Arial.ttf");
@@ -83,7 +106,53 @@ namespace GrafosEST2
             }
 
             ActualizarTodo();
-            MostrarFeedback("✅ Sistema de Habilidades (DAG) inicializado. Haga clic en '⚡ Habilidades (DAG)' para abrir.", new Color(0.3f, 0.9f, 0.5f));
+            if (EsArbolAtaque)
+            {
+                MostrarFeedback("✅ DAG de Ataque inicializado. Los puntos se ganan por ronda y por daño a la base.", new Color(1f, 0.6f, 0.4f));
+            }
+            else
+            {
+                MostrarFeedback("✅ Sistema de Habilidades (DAG) inicializado. Haga clic en '⚡ Habilidades (DAG)' para abrir.", new Color(0.3f, 0.9f, 0.5f));
+            }
+        }
+
+        private void OnDestroy()
+        {
+            if (Instance == this) Instance = null;
+            if (InstanciaAtaque == this) InstanciaAtaque = null;
+        }
+
+        /// <summary>Cambia el jugador dueño de este árbol y refresca el panel.</summary>
+        public void AsignarJugador(Jugador j)
+        {
+            if (j == null) return;
+            jugadorActivo = j;
+            sistemaHabilidades.SincronizarConJugador(j);
+            ActualizarTodo();
+        }
+
+        private string ultimaFirmaJugador = string.Empty;
+
+        /// <summary>
+        /// Cliente LAN: el estado del jugador llega por red. Si cambió algo visible
+        /// (habilidades, puntos o nivel) se resincroniza el grafo y se redibuja el panel.
+        /// </summary>
+        public void RefrescarSiCambio()
+        {
+            if (jugadorActivo == null) return;
+            string firma = $"{jugadorActivo.nivel}|{jugadorActivo.puntosHabilidad}|{jugadorActivo.experiencia}|{string.Join(",", jugadorActivo.habilidadesDesbloqueadas)}";
+            if (firma == ultimaFirmaJugador) return;
+            ultimaFirmaJugador = firma;
+
+            sistemaHabilidades.SincronizarConJugador(jugadorActivo);
+            if (panelHabilidades != null && panelHabilidades.activeSelf)
+            {
+                ActualizarTodo();
+            }
+            else
+            {
+                ActualizarEncabezadoJugador();
+            }
         }
 
         private void InicializarJugadorActivo()
@@ -131,7 +200,7 @@ namespace GrafosEST2
         {
             if (textoInfoJugador == null || jugadorActivo == null) return;
 
-            int total = 15;
+            int total = sistemaHabilidades != null ? sistemaHabilidades.ObtenerTodasLasHabilidades().Count : 15;
             int desbloqueadas = 0;
             if (sistemaHabilidades != null)
             {
@@ -145,10 +214,23 @@ namespace GrafosEST2
                 }
             }
 
-            textoInfoJugador.text = $"👤 Comandante: <color=#66DDFF><b>{jugadorActivo.nombre}</b></color>  |  " +
-                                   $"⭐ Nvl <color=#FFDD44><b>{jugadorActivo.nivel}</b></color> (XP: <color=#88DDFF>{jugadorActivo.experiencia}/{jugadorActivo.experienciaSiguienteNivel}</color>)  |  " +
-                                   $"💎 Puntos Tácticos: <color=#44FF88><b>{jugadorActivo.puntosHabilidad}</b></color> pts  |  " +
-                                   $"💰 Oro: <color=#FFD700><b>{jugadorActivo.oro}</b></color>";
+            if (EsArbolAtaque)
+            {
+                textoInfoJugador.text = $"⚔️ Atacante: <color=#FF9966><b>{jugadorActivo.nombre}</b></color>  |  " +
+                                       $"🕑 Ronda <color=#FFDD44><b>{jugadorActivo.nivel}</b></color>  |  " +
+                                       $"💎 Puntos de Asalto: <color=#44FF88><b>{jugadorActivo.puntosHabilidad}</b></color> pts";
+            }
+            else
+            {
+                // En LAN el oro real del defensor es el de la partida (GameManager), no el guardado en el comandante
+                int oro = (TowerDefenseGameplay.ModoJuego.EsMultijugador && TowerDefenseGameplay.GameManager.Instance != null)
+                    ? TowerDefenseGameplay.GameManager.Instance.oroActual
+                    : jugadorActivo.oro;
+                textoInfoJugador.text = $"👤 Comandante: <color=#66DDFF><b>{jugadorActivo.nombre}</b></color>  |  " +
+                                       $"⭐ Nvl <color=#FFDD44><b>{jugadorActivo.nivel}</b></color> (XP: <color=#88DDFF>{jugadorActivo.experiencia}/{jugadorActivo.experienciaSiguienteNivel}</color>)  |  " +
+                                       $"💎 Puntos Tácticos: <color=#44FF88><b>{jugadorActivo.puntosHabilidad}</b></color> pts  |  " +
+                                       $"💰 Oro: <color=#FFD700><b>{oro}</b></color>";
+            }
 
             if (txtProgresoArmeria != null)
             {
@@ -269,6 +351,9 @@ namespace GrafosEST2
                 case "Defensiva": catTag = "<color=#44FF88>[🛡️ BLINDAJE]</color>"; break;
                 case "Economía": catTag = "<color=#FFDD44>[💰 LOGÍSTICA]</color>"; break;
                 case "Definitiva": catTag = "<color=#EE66FF>[⚡ SUPREMA]</color>"; break;
+                case "Velocidad": catTag = "<color=#FFCC44>[💨 VELOCIDAD]</color>"; break;
+                case "Logistica": catTag = "<color=#FFDD44>[💰 LOGÍSTICA]</color>"; break;
+                case "Blindaje": catTag = "<color=#AA88FF>[🛡️ BLINDAJE]</color>"; break;
                 default: catTag = "<color=#88CCFF>[🔰 BÁSICA]</color>"; break;
             }
             txtTitulo.text = $"{hab.nombre}  {catTag}";
@@ -290,7 +375,8 @@ namespace GrafosEST2
             txtReq.fontSize = 10;
 
             StringBuilder sbReq = new StringBuilder();
-            sbReq.Append($"Costo: <color=#FFDD66><b>{hab.costoPuntos} Puntos</b></color> | Nvl Req: <color=#88DDFF>Nvl {hab.nivelRequerido}</color> | Requisitos: ");
+            string etiquetaNivel = EsArbolAtaque ? "Desde Ronda" : "Nvl Req: Nvl";
+            sbReq.Append($"Costo: <color=#FFDD66><b>{hab.costoPuntos} Puntos</b></color> | {etiquetaNivel} <color=#88DDFF>{hab.nivelRequerido}</color> | Requisitos: ");
             if (prereqs.Count == 0)
             {
                 sbReq.Append("<color=#88FFAA>✓ Habilidad Inicial</color>");
@@ -383,7 +469,7 @@ namespace GrafosEST2
                 else if (estado == EstadoHabilidadEnum.PuntosInsuficientes)
                     txtBloq.text = "🔒 Puntos\nInsuficientes";
                 else
-                    txtBloq.text = $"🔒 Requiere\nNvl {hab.nivelRequerido}";
+                    txtBloq.text = EsArbolAtaque ? $"🔒 Desde\nRonda {hab.nivelRequerido}" : $"🔒 Requiere\nNvl {hab.nivelRequerido}";
 
                 RectTransform rtBloq = txtBloqObj.GetComponent<RectTransform>();
                 rtBloq.anchorMin = Vector2.zero;
@@ -398,23 +484,51 @@ namespace GrafosEST2
 
         public void DesbloquearHabilidad(string idHabilidad)
         {
-            if (sistemaHabilidades.IntentarDesbloquear(idHabilidad, jugadorActivo, out string mensaje))
+            // En LAN el desbloqueo lo valida el host (el cliente solo envía la solicitud)
+            if (TowerDefenseGameplay.ModoJuego.EsMultijugador)
+            {
+                TowerDefenseGameplay.ComandosJugador.DesbloquearHabilidad(
+                    EsArbolAtaque ? TowerDefenseGameplay.RolJugador.Atacante : TowerDefenseGameplay.RolJugador.Defensor,
+                    idHabilidad);
+                MostrarFeedback($"Solicitud de desbloqueo enviada: {idHabilidad}", new Color(0.6f, 0.85f, 1f));
+                return;
+            }
+
+            DesbloquearAutoritativo(idHabilidad, out _);
+        }
+
+        /// <summary>
+        /// Desbloquea la habilidad validando el DAG (prerrequisitos, nivel y puntos).
+        /// Lo ejecuta quien tiene autoridad: un jugador o el host LAN (también por pedido del cliente).
+        /// </summary>
+        public bool DesbloquearAutoritativo(string idHabilidad, out string mensaje)
+        {
+            TowerDefenseGameplay.DestinoNotificacion destino = EsArbolAtaque
+                ? TowerDefenseGameplay.DestinoNotificacion.Atacante
+                : TowerDefenseGameplay.DestinoNotificacion.Defensor;
+
+            if (sistemaHabilidades.IntentarDesbloquear(idHabilidad, jugadorActivo, out mensaje))
             {
                 MostrarFeedback(mensaje, new Color(0.3f, 0.95f, 0.45f));
                 if (TowerDefenseGameplay.GameManager.Instance != null)
                 {
-                    TowerDefenseGameplay.GameManager.Instance.MostrarNotificacion($"⚡ ¡Mejora activada: {mensaje}!");
+                    TowerDefenseGameplay.GameManager.Instance.Notificar($"⚡ ¡Mejora activada: {mensaje}!", destino);
+                    TowerDefenseGameplay.GameManager.Instance.NotificarCambio();
+                }
+                if (EsArbolAtaque && TowerDefenseGameplay.ControladorAtacante.Instance != null)
+                {
+                    TowerDefenseGameplay.ControladorAtacante.Instance.AlDesbloquearHabilidad(idHabilidad);
                 }
                 ActualizarTodo();
+                return true;
             }
-            else
+
+            MostrarFeedback(mensaje, new Color(1f, 0.45f, 0.35f));
+            if (TowerDefenseGameplay.GameManager.Instance != null)
             {
-                MostrarFeedback(mensaje, new Color(1f, 0.45f, 0.35f));
-                if (TowerDefenseGameplay.GameManager.Instance != null)
-                {
-                    TowerDefenseGameplay.GameManager.Instance.MostrarNotificacion($"⚠️ {mensaje}");
-                }
+                TowerDefenseGameplay.GameManager.Instance.Notificar($"⚠️ {mensaje}", destino);
             }
+            return false;
         }
 
         public void EjecutarDemostracionKahn()
@@ -444,7 +558,13 @@ namespace GrafosEST2
 
             bool permitida = sistemaHabilidades.ProbarAgregarAristaConValidacionDAG(origen, destino, out string mensaje);
 
-            if (permitida)
+            if (permitida && TowerDefenseGameplay.ModoJuego.EsMultijugador)
+            {
+                // En LAN ambos PCs deben tener el mismo DAG: la arista solo se prueba y se revierte
+                sistemaHabilidades.Grafo.EliminarArista(origen, destino);
+                MostrarFeedback(mensaje + "\n(Modo LAN: solo demostración, la arista se revirtió para no desincronizar a los jugadores.)", new Color(0.3f, 0.95f, 0.45f));
+            }
+            else if (permitida)
             {
                 MostrarFeedback(mensaje, new Color(0.3f, 0.95f, 0.45f));
                 ActualizarTodo();
@@ -477,7 +597,13 @@ namespace GrafosEST2
 
         public void ReiniciarArbol()
         {
-            sistemaHabilidades.InicializarArbolDefecto();
+            if (TowerDefenseGameplay.ModoJuego.EsMultijugador)
+            {
+                MostrarFeedback("En LAN no se puede reiniciar el árbol durante la partida.", new Color(1f, 0.6f, 0.3f));
+                return;
+            }
+
+            sistemaHabilidades.ReiniciarEstructura();
             sistemaHabilidades.ReiniciarHabilidades(jugadorActivo);
             MostrarFeedback("↺ Árbol y progreso de habilidades reiniciados a los valores por defecto.", new Color(1f, 0.7f, 0.3f));
             ActualizarTodo();
@@ -506,9 +632,9 @@ namespace GrafosEST2
             dropdownDestinoCiclo.AddOptions(ids);
 
             // Seleccionar por defecto dos que demuestren un ciclo didáctico:
-            // HAB_SOBRECARGA (final) apuntando a HAB_BASE (inicial)
-            int idxSobrecarga = ids.IndexOf("HAB_SOBRECARGA");
-            int idxBase = ids.IndexOf("HAB_BASE");
+            // la habilidad definitiva (final) apuntando a la raíz (inicial)
+            int idxSobrecarga = ids.IndexOf(sistemaHabilidades.IdDefinitiva);
+            int idxBase = ids.IndexOf(sistemaHabilidades.IdRaiz);
 
             if (idxSobrecarga >= 0) dropdownOrigenCiclo.value = idxSobrecarga;
             if (idxBase >= 0) dropdownDestinoCiclo.value = idxBase;
@@ -533,10 +659,11 @@ namespace GrafosEST2
             }
 
             // 2. Buscar o crear Canvas
-            GameObject canvasObj = GameObject.Find("Canvas_HabilidadesDAG");
+            string nombreCanvas = EsArbolAtaque ? "Canvas_HabilidadesDAG_Ataque" : "Canvas_HabilidadesDAG";
+            GameObject canvasObj = GameObject.Find(nombreCanvas);
             if (canvasObj == null)
             {
-                canvasObj = new GameObject("Canvas_HabilidadesDAG");
+                canvasObj = new GameObject(nombreCanvas);
                 Canvas canvas = canvasObj.AddComponent<Canvas>();
                 canvas.renderMode = RenderMode.ScreenSpaceOverlay;
                 canvas.sortingOrder = 101; // Encima de otros paneles
@@ -592,7 +719,8 @@ namespace GrafosEST2
             txtTitulo.fontSize = 20;
             txtTitulo.fontStyle = FontStyle.Bold;
             txtTitulo.color = new Color(0.92f, 0.84f, 1f);
-            txtTitulo.text = "⚡ ARMERÍA TÁCTICA & ÁRBOL DE TALENTOS";
+            txtTitulo.text = EsArbolAtaque ? "⚔️ CUARTEL DE ASALTO · DAG DE ATAQUE" : "⚡ ARMERÍA TÁCTICA & ÁRBOL DE TALENTOS";
+            if (EsArbolAtaque) txtTitulo.color = new Color(1f, 0.75f, 0.6f);
 
             LayoutElement leTitulo = txtTituloObj.AddComponent<LayoutElement>();
             leTitulo.flexibleWidth = 1f;
@@ -642,6 +770,7 @@ namespace GrafosEST2
             Button btnReset = CrearBoton(barraJugador.transform, "BtnReset", "↺ Reset Puntos", new Color(0.55f, 0.25f, 0.25f), fuenteUI);
             btnReset.gameObject.AddComponent<LayoutElement>().preferredWidth = 110;
             btnReset.onClick.AddListener(ReiniciarArbol);
+            btnReset.gameObject.SetActive(!TowerDefenseGameplay.ModoJuego.EsMultijugador);
 
             // --- BARRA DE FILTROS POR CATEGORÍA (PESTAÑAS) ---
             GameObject barraFiltros = new GameObject("BarraFiltrosCategorias");
@@ -660,8 +789,19 @@ namespace GrafosEST2
             leFiltros.preferredHeight = 36;
 
             botonesFiltro.Clear();
-            string[] cats = new string[] { "TODAS", "Ofensiva", "Control", "Defensiva", "Economía", "Definitiva" };
-            string[] titulosCats = new string[] { "⭐ TODAS (15)", "⚔️ OFENSIVA", "❄️ CRIOGENIA", "🛡️ BLINDAJE", "💰 LOGÍSTICA", "⚡ SUPREMA" };
+            int totalHabilidades = sistemaHabilidades.ObtenerTodasLasHabilidades().Count;
+            string[] cats;
+            string[] titulosCats;
+            if (EsArbolAtaque)
+            {
+                cats = new string[] { "TODAS", "Velocidad", "Logistica", "Blindaje", "Definitiva" };
+                titulosCats = new string[] { $"⭐ TODAS ({totalHabilidades})", "💨 VELOCIDAD", "💰 LOGÍSTICA", "🛡️ BLINDAJE", "⚡ SUPREMA" };
+            }
+            else
+            {
+                cats = new string[] { "TODAS", "Ofensiva", "Control", "Defensiva", "Economía", "Definitiva" };
+                titulosCats = new string[] { $"⭐ TODAS ({totalHabilidades})", "⚔️ OFENSIVA", "❄️ CRIOGENIA", "🛡️ BLINDAJE", "💰 LOGÍSTICA", "⚡ SUPREMA" };
+            }
 
             for (int f = 0; f < cats.Length; f++)
             {

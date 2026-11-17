@@ -19,8 +19,30 @@ namespace TowerDefenseGameplay
         public bool congelacionTotal = false;
 
         private Enemigo objetivo;
+        private Transform objetivoVisual;
+        private bool soloVisual = false;
         private Vector3 ultimaPosicionConocida;
         private SpriteRenderer spriteRenderer;
+
+        /// <summary>
+        /// Cliente LAN: proyectil que solo se dibuja (el daño ya lo calculó el host).
+        /// </summary>
+        public void ConfigurarVisual(Transform target, bool critico, bool ralentizar, bool splash, bool congelar)
+        {
+            soloVisual = true;
+            objetivoVisual = target;
+            esCritico = critico;
+            aplicaRalentizacion = ralentizar;
+            esAreaSplash = splash;
+            congelacionTotal = congelar;
+
+            if (objetivoVisual != null)
+            {
+                ultimaPosicionConocida = objetivoVisual.position;
+            }
+
+            AsegurarSprite();
+        }
 
         public void Configurar(Enemigo target, float danioBase, bool critico, bool ralentizar, bool splash = false, bool congelar = false)
         {
@@ -91,6 +113,10 @@ namespace TowerDefenseGameplay
             {
                 ultimaPosicionConocida = objetivo.transform.position;
             }
+            else if (objetivoVisual != null)
+            {
+                ultimaPosicionConocida = objetivoVisual.position;
+            }
 
             Vector3 direccion = (ultimaPosicionConocida - transform.position);
             float distanciaPaso = velocidad * Time.deltaTime;
@@ -110,6 +136,12 @@ namespace TowerDefenseGameplay
 
         private void Impactar()
         {
+            if (soloVisual)
+            {
+                Destroy(gameObject);
+                return;
+            }
+
             float ralentizacionAplicar = congelacionTotal ? 1.0f : porcentajeRalentizacion;
 
             if (esAreaSplash)
@@ -121,7 +153,8 @@ namespace TowerDefenseGameplay
                     Enemigo e = colisiones[i].GetComponent<Enemigo>();
                     if (e != null)
                     {
-                        e.RecibirDanio(danio, esCritico);
+                        // multiplicadorDanioArea < 1 si el atacante tiene "Placas Antiexplosión"
+                        e.RecibirDanio(danio * e.multiplicadorDanioArea, esCritico);
                         if (aplicaRalentizacion || congelacionTotal)
                         {
                             e.AplicarRalentizacion(ralentizacionAplicar, duracionRalentizacion);

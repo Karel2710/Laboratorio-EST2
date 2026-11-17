@@ -15,6 +15,10 @@ public class Jugador
     public int oro = 100;
     public System.Collections.Generic.List<string> habilidadesDesbloqueadas = new System.Collections.Generic.List<string>();
 
+    // Historial de partidas multijugador LAN (se guardan en el BST de comandantes)
+    public int victoriasMultijugador = 0;
+    public int derrotasMultijugador = 0;
+
     public Jugador()
     {
         this.vida = 100;
