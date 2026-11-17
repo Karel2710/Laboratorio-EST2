@@ -32,6 +32,19 @@ namespace TowerDefenseGameplay
     {
         /// <summary>Registro de enemigos vivos (las torres lo consultan sin búsquedas costosas).</summary>
         public static readonly List<Enemigo> Activos = new List<Enemigo>();
+        private static int contadorIdRed = 0;
+
+        /// <summary>Cliente LAN: réplicas visuales de los enemigos del host (no tienen lógica ni física).</summary>
+        public static readonly List<Enemigo> Replicas = new List<Enemigo>();
+
+        /// <summary>True si este enemigo es solo la imagen de un enemigo que simula el host LAN.</summary>
+        public bool EsReplica { get; private set; }
+
+        // Bits del byte de estado que viaja por red hacia el cliente LAN
+        public const byte FlagRalentizado = 1;
+        public const byte FlagEscudo = 2;
+        public const byte FlagAcelerado = 4;
+        public const byte FlagAturdido = 8;
 
         [Header("Estadísticas de Vida")]
         public float vidaMaxima = 50f;
@@ -51,6 +64,19 @@ namespace TowerDefenseGameplay
 
         [Header("Efectos")]
         [SerializeField] private SpriteRenderer spriteRenderer;
+
+        [Header("Multijugador LAN / Mejoras del atacante")]
+        public int idRed;
+        public float multiplicadorVelocidadPasivo = 1f;
+        public float regeneracionPorSegundo = 0f;   // fracción de la vida máxima por segundo
+        public float resistenciaHielo = 0f;          // 0..1: cuánto se reduce la ralentización
+        public float multiplicadorDanioArea = 1f;    // < 1 con "Placas Antiexplosión"
+
+        private float escudoTemporal = 0f;           // escudo de las habilidades del atacante
+        private float escudoTemporalHasta = 0f;
+        private float multiplicadorVelocidadTemporal = 1f;
+        private float velocidadTemporalHasta = 0f;
+        private SpriteRenderer anilloEscudo;
 
         private float factorRalentizacion = 1f;
         private float tiempoRalentizacionRestante = 0f;
@@ -103,11 +129,39 @@ namespace TowerDefenseGameplay
         public bool EstaMuerto => estaMuerto;
         public bool EstaCongelado => congeladoRestante > 0f;
         public bool EsFurtivo => tipoEnemigo == TipoEnemigo.VelozFurtivo;
-        public float VelocidadEfectiva => congeladoRestante > 0f ? 0f : factorRalentizacion;
+        public bool EstaRalentizado => tiempoRalentizacionRestante > 0f;
+        public bool TieneEscudoTemporal => escudoTemporal > 0f && Time.time < escudoTemporalHasta;
+        public bool TieneEscudo => escudoActual > 0f || TieneEscudoTemporal;
+        public bool EstaAcelerado => Time.time < velocidadTemporalHasta && multiplicadorVelocidadTemporal > 1f;
+
+        public float VelocidadEfectiva
+        {
+            get
+            {
+                if (congeladoRestante > 0f) return 0f;
+                float temporal = Time.time < velocidadTemporalHasta ? multiplicadorVelocidadTemporal : 1f;
+                return factorRalentizacion * multiplicadorVelocidadPasivo * temporal;
+            }
+        }
+
+        /// <summary>Estado compacto que el host LAN envía al cliente para dibujar el proxy.</summary>
+        public byte FlagsRed
+        {
+            get
+            {
+                byte f = 0;
+                if (EstaRalentizado) f |= FlagRalentizado;
+                if (TieneEscudo) f |= FlagEscudo;
+                if (EstaAcelerado) f |= FlagAcelerado;
+                if (EstaCongelado) f |= FlagAturdido;
+                return f;
+            }
+        }
         public float DistanciaRestante => movimiento != null ? movimiento.DistanciaRestante : 0f;
 
         private void Awake()
         {
+            idRed = ++contadorIdRed;
             if (spriteRenderer == null) spriteRenderer = GetComponent<SpriteRenderer>();
             if (spriteRenderer != null) colorOriginal = spriteRenderer.color;
             movimiento = GetComponent<enemyMovement>();
@@ -117,14 +171,60 @@ namespace TowerDefenseGameplay
 
         private void OnEnable()
         {
-            if (!Activos.Contains(this)) Activos.Add(this);
+            List<Enemigo> registro = EsReplica ? Replicas : Activos;
+            if (!registro.Contains(this)) registro.Add(this);
             Paleta.OnCambio += ActualizarBarraVida;
         }
 
         private void OnDisable()
         {
             Activos.Remove(this);
+            Replicas.Remove(this);
             Paleta.OnCambio -= ActualizarBarraVida;
+        }
+
+        /// <summary>
+        /// Cliente LAN: convierte al enemigo en una réplica visual. Conserva el cuerpo 2D/2.5D,
+        /// la barra de vida y las animaciones, pero sin movimiento propio, física ni recompensas:
+        /// su posición y estado llegan en las instantáneas del host (EnemigoProxy).
+        /// </summary>
+        public void ConvertirEnReplica()
+        {
+            EsReplica = true;
+            Activos.Remove(this);
+            if (!Replicas.Contains(this)) Replicas.Add(this);
+
+            if (movimiento == null) movimiento = GetComponent<enemyMovement>();
+            if (movimiento != null) movimiento.enabled = false;
+            Rigidbody2D rb = GetComponent<Rigidbody2D>();
+            if (rb != null) rb.simulated = false;
+            Collider2D col = GetComponent<Collider2D>();
+            if (col != null) col.enabled = false;
+        }
+
+        /// <summary>Cliente LAN: aplica la vida y los estados (bits Flag*) recibidos del host.</summary>
+        public void AplicarEstadoReplica(float vidaPct, byte flags)
+        {
+            if (!EsReplica) return;
+            vidaActual = Mathf.Clamp01(vidaPct) * vidaMaxima;
+
+            // Los estados se refrescan con cada instantánea (~15/s); duran un poco más para no parpadear
+            congeladoRestante = (flags & FlagAturdido) != 0 ? 0.2f : 0f;
+            tiempoRalentizacionRestante = (flags & FlagRalentizado) != 0 ? 0.2f : 0f;
+            factorRalentizacion = tiempoRalentizacionRestante > 0f ? 0.6f : 1f;
+            velocidadTemporalHasta = (flags & FlagAcelerado) != 0 ? Time.time + 0.2f : 0f;
+            multiplicadorVelocidadTemporal = (flags & FlagAcelerado) != 0 ? 1.5f : 1f;
+
+            bool escudo = (flags & FlagEscudo) != 0;
+            if (escudoMaximo > 0f)
+            {
+                if (!escudo) escudoActual = 0f;
+            }
+            else if (escudo)
+            {
+                AplicarEscudo(1f, 0.25f);
+            }
+            ActualizarBarraVida();
         }
 
         /// <summary>Multiplicador de daño recibido según arquetipo y tipo de daño (resistencias y debilidades).</summary>
@@ -157,6 +257,21 @@ namespace TowerDefenseGameplay
                     return 1f;
                 default:
                     return 1f;
+            }
+        }
+
+        /// <summary>Escala visual por arquetipo (la usa también el proxy del cliente LAN).</summary>
+        public static float EscalaPorTipo(TipoEnemigo tipo)
+        {
+            switch (tipo)
+            {
+                case TipoEnemigo.Corredor: return 0.70f;
+                case TipoEnemigo.Blindado: return 1.20f;
+                case TipoEnemigo.Jefe: return 1.50f;
+                case TipoEnemigo.Sanador: return 0.95f;
+                case TipoEnemigo.VelozFurtivo: return 0.75f;
+                case TipoEnemigo.BlindadoPesado: return 1.35f;
+                default: return 0.90f;
             }
         }
 
@@ -215,6 +330,7 @@ namespace TowerDefenseGameplay
 
             vidaMaxima *= multVida;
             escudoMaximo *= multVida;
+            escala = EscalaPorTipo(tipo);
             transform.localScale = Vector3.one * escala;
             if (movimiento != null) movimiento.ConfigurarVelocidad(velocidad * multVelocidad);
 
@@ -247,6 +363,11 @@ namespace TowerDefenseGameplay
             if (versionVista != Vista25D.Version) AplicarModoVista();
 
             if (congeladoRestante > 0f) congeladoRestante -= dt;
+            if (EsReplica)
+            {
+                ActualizarVisualReplica(dt);
+                return;
+            }
 
             if (tiempoRalentizacionRestante > 0f)
             {
@@ -278,6 +399,38 @@ namespace TowerDefenseGameplay
                 }
             }
 
+            // Regeneración (mejora del DAG de ataque)
+            if (regeneracionPorSegundo > 0f && vidaActual < vidaMaxima)
+            {
+                vidaActual = Mathf.Min(vidaMaxima, vidaActual + vidaMaxima * regeneracionPorSegundo * dt);
+                ActualizarBarraVida();
+            }
+
+            if (escudoTemporal > 0f && Time.time >= escudoTemporalHasta) escudoTemporal = 0f;
+            if (anilloEscudo != null)
+            {
+                bool mostrar = TieneEscudoTemporal;
+                if (anilloEscudo.enabled != mostrar) anilloEscudo.enabled = mostrar;
+            }
+
+            if (Vista25D.Activa && cuerpo3D != null) AnimarCuerpo3D(dt);
+        }
+
+        /// <summary>Réplica LAN: solo colores, aro de escudo y animación (sin curaciones ni regeneración).</summary>
+        private void ActualizarVisualReplica(float dt)
+        {
+            if (tiempoRalentizacionRestante > 0f) tiempoRalentizacionRestante -= dt;
+            if (spriteRenderer != null)
+            {
+                if (congeladoRestante > 0f) spriteRenderer.color = new Color(0.1f, 0.95f, 1f, colorOriginal.a);
+                else if (tiempoRalentizacionRestante > 0f) spriteRenderer.color = new Color(colorFrio.r, colorFrio.g, colorFrio.b, colorOriginal.a);
+                else spriteRenderer.color = colorOriginal;
+            }
+            if (anilloEscudo != null)
+            {
+                bool mostrar = TieneEscudoTemporal;
+                if (anilloEscudo.enabled != mostrar) anilloEscudo.enabled = mostrar;
+            }
             if (Vista25D.Activa && cuerpo3D != null) AnimarCuerpo3D(dt);
         }
 
@@ -314,10 +467,20 @@ namespace TowerDefenseGameplay
         /// </summary>
         public float RecibirDanio(float danio, bool esCritico = false, TipoDanio tipoDanio = TipoDanio.Cinetico, bool mostrarTexto = true)
         {
-            if (estaMuerto) return 0f;
+            if (estaMuerto || EsReplica) return 0f;
 
             float efectivo = danio * Resistencia(tipoEnemigo, tipoDanio);
+            // "Placas Antiexplosión" del atacante reducen el daño de área
+            if (tipoDanio == TipoDanio.Explosivo) efectivo *= multiplicadorDanioArea;
             float restante = efectivo;
+
+            // El escudo temporal (habilidades del atacante en LAN) absorbe primero
+            if (TieneEscudoTemporal)
+            {
+                float absorbidoTemp = Mathf.Min(escudoTemporal, restante);
+                escudoTemporal -= absorbidoTemp;
+                restante -= absorbidoTemp;
+            }
 
             if (escudoActual > 0f)
             {
@@ -355,6 +518,7 @@ namespace TowerDefenseGameplay
         {
             if (estaMuerto) return;
             if (tipoEnemigo == TipoEnemigo.Jefe) porcentaje *= 0.5f;
+            porcentaje *= 1f - Mathf.Clamp01(resistenciaHielo); // "Anticongelante" del atacante
             float nuevoFactor = Mathf.Clamp(1f - porcentaje, 0.2f, 1f);
             factorRalentizacion = Mathf.Min(factorRalentizacion, nuevoFactor);
             tiempoRalentizacionRestante = Mathf.Max(tiempoRalentizacionRestante, duracion);
@@ -366,6 +530,53 @@ namespace TowerDefenseGameplay
             if (estaMuerto) return;
             if (tipoEnemigo == TipoEnemigo.Jefe) duracion *= 0.6f;
             congeladoRestante = Mathf.Max(congeladoRestante, duracion);
+        }
+
+        /// <summary>Aturde al enemigo (lo detiene en seco), sin la resistencia de los jefes.</summary>
+        public void Aturdir(float duracion)
+        {
+            if (estaMuerto) return;
+            congeladoRestante = Mathf.Max(congeladoRestante, duracion);
+        }
+
+        /// <summary>Escudo temporal que absorbe daño (habilidades Escudo y Asalto Total del atacante).</summary>
+        public void AplicarEscudo(float cantidad, float duracion)
+        {
+            if (estaMuerto) return;
+            escudoTemporal = Mathf.Max(TieneEscudoTemporal ? escudoTemporal : 0f, cantidad);
+            escudoTemporalHasta = Mathf.Max(escudoTemporalHasta, Time.time + duracion);
+            if (anilloEscudo == null)
+            {
+                anilloEscudo = GraficosProc.CrearSprite(transform, "AnilloEscudoAtaque", GraficosProc.Anillo, new Color(0.35f, 0.9f, 1f, 0.85f), 9, 1.25f);
+            }
+            anilloEscudo.enabled = true;
+        }
+
+        /// <summary>Aumento temporal de velocidad ("Estampida", "Asalto Total").</summary>
+        public void AplicarVelocidadTemporal(float multiplicador, float duracion)
+        {
+            if (estaMuerto) return;
+            multiplicadorVelocidadTemporal = Mathf.Max(Time.time < velocidadTemporalHasta ? multiplicadorVelocidadTemporal : 1f, multiplicador);
+            velocidadTemporalHasta = Mathf.Max(velocidadTemporalHasta, Time.time + duracion);
+        }
+
+        /// <summary>Multiplica la vida máxima (mejora "Blindaje Reforzado" del atacante).</summary>
+        public void MultiplicarVidaMaxima(float factor)
+        {
+            vidaMaxima *= factor;
+            escudoMaximo *= factor;
+            vidaActual = vidaMaxima;
+            escudoActual = escudoMaximo;
+            ActualizarBarraVida();
+        }
+
+        /// <summary>
+        /// Marca al enemigo como retirado al llegar a la base, para que un proyectil que
+        /// impacte en el mismo frame no lo cuente también como derrotado.
+        /// </summary>
+        public void Retirar()
+        {
+            estaMuerto = true;
         }
 
         public void DestruirEscudo()

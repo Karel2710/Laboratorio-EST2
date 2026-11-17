@@ -146,7 +146,8 @@ namespace TowerDefenseGameplay
         /// <summary>
         /// Instancia una torre en la casilla. No cobra: el pago lo valida GameManager.
         /// </summary>
-        public Torre ColocarTorre(TipoTorre tipo, int inversion)
+        /// <param name="soloVisual">Cliente LAN: la torre solo se dibuja (el host es quien dispara).</param>
+        public Torre ColocarTorre(TipoTorre tipo, int inversion, bool soloVisual = false)
         {
             if (TieneTorre || deshabilitado) return null;
 
@@ -155,6 +156,7 @@ namespace TowerDefenseGameplay
             torreObj.transform.SetParent(transform, true);
 
             Torre contenedor = torreObj.AddComponent<Torre>();
+            contenedor.soloVisual = soloVisual;
             // Compensar la escala de la casilla para que la torre conserve su tamaño de diseño
             Vector3 ls = transform.lossyScale;
             if (ls.x > 0.01f && ls.y > 0.01f) contenedor.escalaBase = new Vector3(1f / ls.x, 1f / ls.y, ls.z > 0.01f ? 1f / ls.z : 1f);
@@ -166,6 +168,24 @@ namespace TowerDefenseGameplay
             RestaurarColor();
             if (RedTorresMST.Instance != null) RedTorresMST.Instance.Recalcular();
             return contenedor;
+        }
+
+        /// <summary>
+        /// Cliente LAN: refleja la torre que existe en el host (tipo, nivel y prioridad).
+        /// No cobra oro ni dispara.
+        /// </summary>
+        public void ConstruirTorreVisual(TipoTorre tipo, int nivel, PrioridadObjetivo prioridad)
+        {
+            if (TieneTorre && torreInstanciada.tipo != tipo) QuitarTorre();
+            if (!TieneTorre)
+            {
+                Torre nueva = ColocarTorre(tipo, Torre.CostoBase(tipo), soloVisual: true);
+                if (nueva == null) return;
+                if (EfectosVisualesManager.Instance != null)
+                    EfectosVisualesManager.Instance.OndaExpansiva(nueva.transform.position, 0.9f, Torre.ColorTipo(tipo), 0.35f);
+            }
+            torreInstanciada.EstablecerNivelVisual(nivel);
+            torreInstanciada.prioridad = prioridad;
         }
 
         /// <summary>Retira la torre de la casilla y actualiza la red MST.</summary>

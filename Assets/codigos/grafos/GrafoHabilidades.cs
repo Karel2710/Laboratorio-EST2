@@ -4,6 +4,13 @@ using System.Text;
 
 namespace GrafosEST2
 {
+    /// <summary>Qué árbol representa el grafo: el del defensor (original) o el del atacante (LAN).</summary>
+    public enum TipoArbolHabilidades
+    {
+        Defensa,
+        Ataque
+    }
+
     public enum EstadoHabilidadEnum
     {
         Desbloqueada,
@@ -21,11 +28,36 @@ namespace GrafosEST2
     public class GrafoHabilidades
     {
         public Grafo<Habilidad> Grafo { get; private set; }
+        public TipoArbolHabilidades Tipo { get; private set; }
 
-        public GrafoHabilidades()
+        /// <summary>Habilidad inicial (siempre desbloqueada, in-degree 0).</summary>
+        public string IdRaiz => Tipo == TipoArbolHabilidades.Ataque ? "ATK_BASE" : "HAB_BASE";
+
+        /// <summary>Habilidad definitiva (cúspide del DAG).</summary>
+        public string IdDefinitiva => Tipo == TipoArbolHabilidades.Ataque ? "ATK_ASALTO_TOTAL" : "HAB_SOBRECARGA";
+
+        public GrafoHabilidades() : this(TipoArbolHabilidades.Defensa)
         {
+        }
+
+        public GrafoHabilidades(TipoArbolHabilidades tipo)
+        {
+            Tipo = tipo;
             Grafo = new Grafo<Habilidad>(esDirigido: true);
-            InicializarArbolDefecto();
+            ReiniciarEstructura();
+        }
+
+        /// <summary>Reconstruye los vértices y aristas del árbol según su tipo.</summary>
+        public void ReiniciarEstructura()
+        {
+            if (Tipo == TipoArbolHabilidades.Ataque)
+            {
+                InicializarArbolAtaque();
+            }
+            else
+            {
+                InicializarArbolDefecto();
+            }
         }
 
         /// <summary>
@@ -215,6 +247,104 @@ namespace GrafosEST2
             Grafo.AgregarArista("HAB_CANON_AREA", "HAB_BOMBARDEO", 1f);
             Grafo.AgregarArista("HAB_TORRE_LASER", "HAB_FOCO_LASER", 1f);
             Grafo.AgregarArista("HAB_TORRE_HIELO", "HAB_PULSO_EMP", 1f);
+        }
+
+        /// <summary>
+        /// DAG del ATACANTE (multijugador LAN). Misma estructura de datos que el del defensor:
+        /// lista de adyacencia dirigida, orden topológico con Kahn y detección de ciclos.
+        /// El "nivel requerido" se interpreta como la ronda mínima en la que se puede comprar.
+        /// </summary>
+        public void InicializarArbolAtaque()
+        {
+            Grafo.Limpiar();
+
+            // --- RAÍZ ---
+            Grafo.AgregarNodo("ATK_BASE", new Habilidad(
+                "ATK_BASE", "Mando de Asalto",
+                "Doctrina básica de ataque. Habilidad inicial del atacante.",
+                0, 1, "Básica"));
+
+            // --- NIVEL 1 ---
+            Grafo.AgregarNodo("ATK_BOTAS", new Habilidad(
+                "ATK_BOTAS", "Botas Ligeras",
+                "Todos los enemigos que envíes se mueven un 15% más rápido.",
+                1, 1, "Velocidad"));
+
+            Grafo.AgregarNodo("ATK_LOGISTICA", new Habilidad(
+                "ATK_LOGISTICA", "Logística",
+                "+20% de ingreso de créditos por segundo durante la ventana de envío.",
+                1, 1, "Logistica"));
+
+            Grafo.AgregarNodo("ATK_BLINDAJE", new Habilidad(
+                "ATK_BLINDAJE", "Blindaje Reforzado",
+                "Todos los enemigos que envíes tienen +20% de vida máxima.",
+                1, 1, "Blindaje"));
+
+            // --- NIVEL 2 ---
+            Grafo.AgregarNodo("ATK_ENJAMBRE", new Habilidad(
+                "ATK_ENJAMBRE", "Enjambre",
+                "Los Corredores cuestan un 30% menos (15 -> 10 créditos).",
+                1, 2, "Velocidad"));
+
+            Grafo.AgregarNodo("ATK_ANTICONGELANTE", new Habilidad(
+                "ATK_ANTICONGELANTE", "Anticongelante",
+                "La ralentización de las torres de hielo afecta la mitad a tus enemigos.",
+                1, 2, "Velocidad"));
+
+            Grafo.AgregarNodo("ATK_SAQUEO", new Habilidad(
+                "ATK_SAQUEO", "Saqueo",
+                "El bono de créditos por golpear la base se duplica.",
+                1, 2, "Logistica"));
+
+            Grafo.AgregarNodo("ATK_REGENERACION", new Habilidad(
+                "ATK_REGENERACION", "Regeneración",
+                "Tus enemigos recuperan un 2% de su vida máxima por segundo.",
+                1, 2, "Blindaje"));
+
+            // --- NIVEL 3 ---
+            Grafo.AgregarNodo("ATK_ATAJO", new Habilidad(
+                "ATK_ATAJO", "Atajo Táctico",
+                "Abre la Ruta C: el camino mínimo del grafo (Dijkstra) hacia la base.",
+                2, 3, "Velocidad"));
+
+            Grafo.AgregarNodo("ATK_TITANES", new Habilidad(
+                "ATK_TITANES", "Titanes",
+                "Permite enviar Jefes (150 créditos).",
+                2, 3, "Blindaje"));
+
+            Grafo.AgregarNodo("ATK_PLACAS", new Habilidad(
+                "ATK_PLACAS", "Placas Antiexplosión",
+                "Tus enemigos reciben un 40% menos de daño de área del cañón.",
+                2, 3, "Blindaje"));
+
+            // --- NIVEL 4 (Definitiva) ---
+            Grafo.AgregarNodo("ATK_ASALTO_TOTAL", new Habilidad(
+                "ATK_ASALTO_TOTAL", "Asalto Total",
+                "Habilidad suprema (tecla T): todos tus enemigos +50% de velocidad y escudo durante 10 s.",
+                2, 5, "Definitiva"));
+
+            Grafo.ObtenerNodo("ATK_BASE").Valor.desbloqueada = true;
+
+            // Aristas de precedencia (u -> v: u es prerrequisito de v)
+            Grafo.AgregarArista("ATK_BASE", "ATK_BOTAS", 1f);
+            Grafo.AgregarArista("ATK_BASE", "ATK_LOGISTICA", 1f);
+            Grafo.AgregarArista("ATK_BASE", "ATK_BLINDAJE", 1f);
+
+            Grafo.AgregarArista("ATK_BOTAS", "ATK_ENJAMBRE", 1f);
+            Grafo.AgregarArista("ATK_BOTAS", "ATK_ANTICONGELANTE", 1f);
+            Grafo.AgregarArista("ATK_LOGISTICA", "ATK_SAQUEO", 1f);
+            Grafo.AgregarArista("ATK_BLINDAJE", "ATK_REGENERACION", 1f);
+
+            Grafo.AgregarArista("ATK_ENJAMBRE", "ATK_ATAJO", 1f);
+            Grafo.AgregarArista("ATK_LOGISTICA", "ATK_ATAJO", 1f);
+            Grafo.AgregarArista("ATK_BLINDAJE", "ATK_TITANES", 1f);
+            Grafo.AgregarArista("ATK_SAQUEO", "ATK_TITANES", 1f);
+            Grafo.AgregarArista("ATK_REGENERACION", "ATK_PLACAS", 1f);
+
+            // Definitiva: convergencia de las tres ramas
+            Grafo.AgregarArista("ATK_ATAJO", "ATK_ASALTO_TOTAL", 1f);
+            Grafo.AgregarArista("ATK_TITANES", "ATK_ASALTO_TOTAL", 1f);
+            Grafo.AgregarArista("ATK_PLACAS", "ATK_ASALTO_TOTAL", 1f);
         }
 
         /// <summary>
@@ -463,12 +593,12 @@ namespace GrafosEST2
 
             foreach (var kvp in Grafo.Nodos)
             {
-                if (kvp.Key == "HAB_BASE")
+                if (kvp.Key == IdRaiz)
                 {
                     kvp.Value.Valor.desbloqueada = true;
-                    if (!jugador.TieneHabilidad("HAB_BASE"))
+                    if (!jugador.TieneHabilidad(IdRaiz))
                     {
-                        jugador.habilidadesDesbloqueadas.Add("HAB_BASE");
+                        jugador.habilidadesDesbloqueadas.Add(IdRaiz);
                     }
                 }
                 else
@@ -485,13 +615,13 @@ namespace GrafosEST2
         {
             foreach (var kvp in Grafo.Nodos)
             {
-                kvp.Value.Valor.desbloqueada = (kvp.Key == "HAB_BASE");
+                kvp.Value.Valor.desbloqueada = (kvp.Key == IdRaiz);
             }
 
             if (jugador != null)
             {
                 jugador.habilidadesDesbloqueadas.Clear();
-                jugador.habilidadesDesbloqueadas.Add("HAB_BASE");
+                jugador.habilidadesDesbloqueadas.Add(IdRaiz);
                 jugador.puntosHabilidad = 0; // Puntos obtenidos progresivamente por juego
                 jugador.experiencia = 0;
             }

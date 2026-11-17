@@ -59,6 +59,16 @@ namespace TowerDefenseGameplay
         public int idTorre;
         public const int NIVEL_MAXIMO = 3;
 
+        [Header("Multijugador LAN")]
+        [Tooltip("Cliente LAN: la torre solo se dibuja (el host es quien dispara de verdad).")]
+        public bool soloVisual = false;
+        private float hackeadaHasta = 0f;
+        private bool hackeadaVisual = false;
+        private bool tinteHackeoAplicado = false;
+        private Enemigo laserVisualObjetivo;
+        private float laserVisualHasta = 0f;
+        private Color colorBaseGuardado, colorAnilloGuardado, colorCanonGuardado;
+
         /// <summary>Escala local base (compensa la escala de la casilla padre).</summary>
         public Vector3 escalaBase = Vector3.one;
 
@@ -95,6 +105,12 @@ namespace TowerDefenseGameplay
         public bool EsRadar => tipo == TipoTorre.Radar;
         public string NombreCorto => Sigla(tipo) + idTorre;
         public Enemigo ObjetivoActual => objetivoActual;
+
+        /// <summary>True mientras la habilidad "Hackeo" del atacante LAN tiene desactivada esta torre.</summary>
+        public bool EstaHackeada => soloVisual ? hackeadaVisual : Time.time < hackeadaHasta;
+
+        /// <summary>Índice de la casilla donde está la torre (identificador en la red LAN).</summary>
+        public int IndicePlot => plot != null ? plot.indice : -1;
 
         #region Catálogo de Tipos
 
@@ -388,6 +404,20 @@ namespace TowerDefenseGameplay
             float dt = Time.deltaTime;
             if (versionVista != Vista25D.Version) AplicarModoVista();
             AnimarVisuales(dt);
+            ActualizarTinteHackeo();
+
+            if (soloVisual)
+            {
+                ActualizarVisualRemota();
+                return;
+            }
+
+            if (EstaHackeada)
+            {
+                objetivoActual = null;
+                if (hazLaser != null) hazLaser.enabled = false;
+                return;
+            }
 
             if (EsRadar)
             {
@@ -527,6 +557,8 @@ namespace TowerDefenseGameplay
             bool congela = esHielo && Hab("HAB_CERO_ABSOLUTO") && Random.value < 0.2f;
             p.Configurar(objetivoActual, danio, critico, ralentiza, esSplash, congela);
             p.colorEstela = ColorTipo(tipo);
+            if (ServidorPartida.Instancia != null)
+                ServidorPartida.Instancia.RegistrarDisparo(this, objetivoActual, critico, ralentiza, esSplash, congela);
 
             retroceso = esSplash ? 0.16f : 0.09f;
             if (EfectosVisualesManager.Instance != null)
@@ -562,6 +594,8 @@ namespace TowerDefenseGameplay
             while (acumuladorLaser >= tic && objetivoActual != null && !objetivoActual.EstaMuerto)
             {
                 acumuladorLaser -= tic;
+                if (ServidorPartida.Instancia != null)
+                    ServidorPartida.Instancia.RegistrarDisparo(this, objetivoActual, false, false, false, false);
                 float d = DanioEfectivo * rampa * tic;
                 bool critico = Random.value < ProbabilidadCritico * 0.5f;
                 if (critico) d *= 2f;
@@ -583,6 +617,9 @@ namespace TowerDefenseGameplay
             Dictionary<Enemigo, Vector3> origen = new Dictionary<Enemigo, Vector3>();
             Dictionary<Enemigo, int> profundidad = new Dictionary<Enemigo, int>();
             HashSet<Enemigo> visitados = new HashSet<Enemigo>();
+
+            if (ServidorPartida.Instancia != null)
+                ServidorPartida.Instancia.RegistrarDisparo(this, objetivoActual, critico, false, false, false);
 
             cola.Enqueue(objetivoActual);
             visitados.Add(objetivoActual);
@@ -635,6 +672,150 @@ namespace TowerDefenseGameplay
                 if (EfectosVisualesManager.Instance != null)
                     EfectosVisualesManager.Instance.OndaExpansiva(transform.position, 1.4f + 0.2f * nivel, new Color(0.3f, 1f, 0.6f, 0.55f), 0.9f);
             }
+        }
+
+        #endregion
+
+        #region Multijugador LAN (hackeo y torres visuales del cliente)
+
+        public void Hackear(float duracion)
+        {
+            hackeadaHasta = Mathf.Max(hackeadaHasta, Time.time + duracion);
+            objetivoActual = null;
+        }
+
+        /// <summary>Cliente LAN: refleja el estado de hackeo recibido del host.</summary>
+        public void EstablecerHackeadaVisual(bool hackeada)
+        {
+            hackeadaVisual = hackeada;
+        }
+
+        /// <summary>Cliente LAN: iguala el nivel de la torre al del host (con su efecto de mejora).</summary>
+        public void EstablecerNivelVisual(int nuevoNivel)
+        {
+            nuevoNivel = Mathf.Clamp(nuevoNivel, 1, NIVEL_MAXIMO);
+            while (nivel < nuevoNivel) SubirNivel(0);
+            if (nivel > nuevoNivel)
+            {
+                nivel = nuevoNivel;
+                ActualizarColoresVisuales();
+            }
+        }
+
+        /// <summary>Cliente LAN: dibuja el disparo que hizo esta torre en el host.</summary>
+        public void DispararVisual(Enemigo replica, bool critico, bool hielo, bool splash, bool congela)
+        {
+            if (replica == null) return;
+            ApuntarHacia(replica.transform.position);
+            EfectosVisualesManager fx = EfectosVisualesManager.Instance;
+
+            switch (tipo)
+            {
+                case TipoTorre.Laser:
+                    laserVisualObjetivo = replica;
+                    laserVisualHasta = Time.time + 0.25f;
+                    break;
+                case TipoTorre.Tesla:
+                    if (fx != null)
+                    {
+                        fx.Rayo(PuntaCanon, replica.PuntoImpacto, ColorTipo(TipoTorre.Tesla), 0.16f, 0.07f);
+                        fx.Destello(PuntaCanon, ColorTipo(TipoTorre.Tesla), 0.6f);
+                    }
+                    retroceso = 0.05f;
+                    break;
+                case TipoTorre.Radar:
+                    break;
+                default:
+                    GameObject projObj = new GameObject("ProyectilVisual");
+                    projObj.transform.position = PuntaCanon;
+                    Proyectil p = projObj.AddComponent<Proyectil>();
+                    if (splash) p.radioSplash = Hab("HAB_CANON_AREA") ? 2.4f : 1.6f;
+                    p.ConfigurarVisual(replica, DanioDe(tipo), critico, hielo, splash, congela);
+                    p.colorEstela = ColorTipo(tipo);
+                    retroceso = splash ? 0.16f : 0.09f;
+                    if (fx != null) fx.Destello(PuntaCanon, ColorTipo(tipo), splash ? 0.55f : 0.35f);
+                    break;
+            }
+        }
+
+        private void ApuntarHacia(Vector3 destino)
+        {
+            Vector2 dir = (destino - transform.position).normalized;
+            if (dir.sqrMagnitude < 0.0001f) return;
+            float angulo = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg - 90f;
+            if (canonRotatorio != null && !EsRadar) canonRotatorio.rotation = Quaternion.Euler(0, 0, angulo);
+            if (arma3D != null && !EsRadar) arma3D.rotation = Quaternion.Euler(0, 0, angulo) * Recursos25D.RotModelo;
+        }
+
+        /// <summary>Cliente LAN: apunta a la réplica más cercana y mantiene el haz láser recibido.</summary>
+        private void ActualizarVisualRemota()
+        {
+            if (EsRadar) return;
+
+            bool laser = tipo == TipoTorre.Laser && laserVisualObjetivo != null && Time.time < laserVisualHasta && !EstaHackeada;
+            if (hazLaser != null)
+            {
+                hazLaser.enabled = laser;
+                if (laser)
+                {
+                    hazLaser.SetPosition(0, PuntaCanon);
+                    hazLaser.SetPosition(1, laserVisualObjetivo.PuntoImpacto);
+                    float ancho = 0.07f + 0.015f * Mathf.Sin(Time.time * 40f);
+                    hazLaser.startWidth = ancho;
+                    hazLaser.endWidth = ancho * 0.7f;
+                }
+            }
+            if (EstaHackeada) return;
+            if (laser)
+            {
+                ApuntarHacia(laserVisualObjetivo.transform.position);
+                return;
+            }
+
+            Enemigo cercano = null;
+            float menor = AlcanceEfectivo;
+            List<Enemigo> replicas = Enemigo.Replicas;
+            for (int i = 0; i < replicas.Count; i++)
+            {
+                if (replicas[i] == null) continue;
+                float d = Vector2.Distance(transform.position, replicas[i].transform.position);
+                if (d <= menor)
+                {
+                    menor = d;
+                    cercano = replicas[i];
+                }
+            }
+            if (cercano != null) ApuntarHacia(cercano.transform.position);
+        }
+
+        /// <summary>Tinte verde apagado mientras la torre está hackeada (2D y 2.5D).</summary>
+        private void ActualizarTinteHackeo()
+        {
+            bool hackeada = EstaHackeada;
+            if (hackeada == tinteHackeoAplicado || !visualesListos) return;
+            tinteHackeoAplicado = hackeada;
+
+            if (hackeada)
+            {
+                colorBaseGuardado = srBase.color;
+                colorAnilloGuardado = srAnillo.color;
+                colorCanonGuardado = srCanon.color;
+                srBase.color = new Color(0.25f, 0.25f, 0.25f);
+                srAnillo.color = new Color(0.55f, 1f, 0.35f);
+                srCanon.color = new Color(0.15f, 0.15f, 0.15f);
+            }
+            else
+            {
+                srBase.color = colorBaseGuardado;
+                srAnillo.color = colorAnilloGuardado;
+                srCanon.color = colorCanonGuardado;
+            }
+
+            Color tinte = hackeada ? new Color(0.35f, 1f, 0.3f, 0.55f) : new Color(0f, 0f, 0f, 0f);
+            if (raiz3D != null) Recursos25D.Tenir(raiz3D.GetComponentsInChildren<Renderer>(true), tinte);
+            if (arma3D != null) Recursos25D.Tenir(arma3D.GetComponentsInChildren<Renderer>(true), tinte);
+            if (hackeada && EfectosVisualesManager.Instance != null)
+                EfectosVisualesManager.Instance.TextoFlotante(transform.position + Vector3.up * 0.5f, "HACKEADA", new Color(0.55f, 1f, 0.35f), 1.1f);
         }
 
         #endregion
@@ -992,6 +1173,7 @@ namespace TowerDefenseGameplay
             RefrescarIndicadores();
             ConstruirVisuales3D();
             AplicarModoVista();
+            tinteHackeoAplicado = false; // los colores se regeneraron: el tinte de hackeo se reaplica si sigue activo
         }
 
         private void AnimarVisuales(float dt)

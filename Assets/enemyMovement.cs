@@ -28,6 +28,7 @@ public class enemyMovement : MonoBehaviour
 
     private bool usandoGrafo = false;
     private bool llego = false;
+    private bool rutaFija = false; // LAN: la ruta la eligió el atacante (Ruta A/B/C)
     private TowerDefenseGameplay.Enemigo componenteEnemigo;
 
     public void ConfigurarVelocidad(float nuevaVelocidad)
@@ -201,6 +202,14 @@ public class enemyMovement : MonoBehaviour
     {
         if (nuevaRuta == null || nuevaRuta.Count == 0) return;
 
+        // LAN: la ruta elegida por el atacante se respeta mientras siga transitable. Si una
+        // barricada corta uno de sus tramos, el enemigo acepta el desvío que calculó Dijkstra.
+        if (rutaFija)
+        {
+            if (RutaFijaTransitable()) return;
+            rutaFija = false;
+        }
+
         PathNode objetivoAnterior = NodoObjetivo;
         if (objetivoAnterior != null && nuevaRuta[0] != objetivoAnterior && nuevaRuta[0] == nodoPrevio)
         {
@@ -211,6 +220,35 @@ public class enemyMovement : MonoBehaviour
         rutaGrafo = new List<PathNode>(nuevaRuta);
         usandoGrafo = true;
         indiceNodoActual = 0;
+    }
+
+    /// <summary>
+    /// Asigna una ruta propia a este enemigo (Ruta A/B/C del atacante, calculada con Dijkstra).
+    /// El enemigo aparece sobre el primer nodo y la sigue hasta la base.
+    /// </summary>
+    public void AsignarRuta(List<PathNode> ruta)
+    {
+        if (ruta == null || ruta.Count < 2) return;
+        rutaGrafo = new List<PathNode>(ruta);
+        usandoGrafo = true;
+        rutaFija = true;
+        nodoPrevio = rutaGrafo[0];
+        indiceNodoActual = 1;
+    }
+
+    /// <summary>True si todas las aristas que le quedan por recorrer a la ruta fija siguen en el grafo.</summary>
+    private bool RutaFijaTransitable()
+    {
+        if (rutaGrafo == null) return false;
+        PathNode anterior = nodoPrevio;
+        for (int i = indiceNodoActual; i < rutaGrafo.Count; i++)
+        {
+            PathNode n = rutaGrafo[i];
+            if (n == null) return false;
+            if (anterior != null && anterior != n && !anterior.vecinos.Contains(n)) return false;
+            anterior = n;
+        }
+        return true;
     }
 
     private Transform ObtenerTransformObjetivo()
@@ -278,6 +316,14 @@ public class enemyMovement : MonoBehaviour
         llego = true;
 
         if (rb != null) rb.linearVelocity = Vector2.zero;
+
+        // Si ya murió en este mismo frame (proyectil), no se cuenta también como golpe a la base
+        if (componenteEnemigo != null && componenteEnemigo.EstaMuerto)
+        {
+            Destroy(gameObject);
+            return;
+        }
+        if (componenteEnemigo != null) componenteEnemigo.Retirar();
 
         if (TowerDefenseGameplay.GameManager.Instance != null)
         {

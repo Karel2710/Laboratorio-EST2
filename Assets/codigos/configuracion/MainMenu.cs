@@ -3,9 +3,11 @@ using UnityEngine.SceneManagement;
 
 public class MainMenu : MonoBehaviour
 {
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
+    /// <summary>Botón original del menú: partida de un jugador (sin cambios en las reglas).</summary>
     public void EmpezarJuego()
     {
+        TowerDefenseGameplay.ModoJuego.IniciadoDesdeMenu = true;
+        TowerDefenseGameplay.ModoJuego.ConfigurarUnJugador();
         SceneManager.LoadScene("SampleScene");
     }
 }

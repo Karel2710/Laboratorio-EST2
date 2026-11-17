@@ -12,7 +12,16 @@ namespace TowerDefenseGameplay
         OleadaEnCurso,
         OleadaCompletada,
         GameOver,
-        Victoria
+        Victoria,
+        EsperandoJugadores // Solo LAN: el host espera a que el cliente cargue la escena
+    }
+
+    /// <summary>A quién va dirigida una notificación (en LAN cada jugador ve solo las suyas).</summary>
+    public enum DestinoNotificacion
+    {
+        Defensor,
+        Atacante,
+        Ambos
     }
 
     public enum HabilidadActiva
@@ -39,6 +48,11 @@ namespace TowerDefenseGameplay
     /// Director central del juego (Tower Defense).
     /// Controla niveles, oleadas, base, economía, construcción/mejora/venta de torres,
     /// habilidades activas, progresión del comandante y puntaje.
+    ///
+    /// En multijugador LAN (atacante vs defensor):
+    ///  - En el host simula las rondas (el atacante decide qué enemigos salen y por qué ruta).
+    ///  - En el cliente actúa como "espejo": sus campos los escribe ClientePartida con el estado del host,
+    ///    no ejecuta lógica de oleadas y las acciones del defensor se envían al host (ComandosJugador).
     /// </summary>
     public class GameManager : MonoBehaviour
     {
@@ -98,6 +112,16 @@ namespace TowerDefenseGameplay
         private IndicadorAlcance indicador;
         private readonly List<PlotTorre> plotsOrdenados = new List<PlotTorre>();
         private bool finRegistrado = false;
+
+        [Header("Multijugador LAN (rondas)")]
+        public float duracionVentanaRonda = 45f;
+        public float pausaEntreRondas = 10f;
+        public float preparacionInicialMultijugador = 20f;
+        public float tiempoRondaRestante = 0f;
+        public bool ventanaEnvioAbierta = false;
+        public const int RondasMultijugador = 8;
+        /// <summary>Topología del grafo en LAN: principal + Sendero Este + Pantano + Sendero Norte (rutas A/B/C).</summary>
+        public const int TopologiaMultijugador = 2;
 
         public bool SobrecargaActiva => sobrecargaActiva;
         public int OroActual => oroActual;
@@ -160,7 +184,18 @@ namespace TowerDefenseGameplay
             GameObject ind = new GameObject("IndicadorAlcance");
             indicador = ind.AddComponent<IndicadorAlcance>();
 
-            CargarNivel(0, false);
+            if (ModoJuego.EsMultijugador)
+            {
+                // Las rondas arrancan cuando el host confirma que ambos jugadores cargaron la escena
+                CargarNivelInterno(0, false, TopologiaMultijugador);
+                totalOleadas = RondasMultijugador;
+                estado = EstadoJuego.EsperandoJugadores;
+                MostrarNotificacionLocal("🌐 Sincronizando con el otro jugador...");
+                NotificarCambio();
+                return;
+            }
+
+            CargarNivelInterno(ModoJuego.NivelUnJugador, false, -1);
             MostrarNotificacion("🎮 ¡Bienvenido Comandante! Elige una torre en la barra inferior, colócala en el mapa y pulsa ▶ Iniciar Oleada.");
         }
 
@@ -168,7 +203,17 @@ namespace TowerDefenseGameplay
         {
             GestionarEntradaMapa();
 
-            // Cuenta regresiva entre oleadas (modo Auto-Oleada)
+            // En el cliente LAN el estado lo escribe ClientePartida: no se simula nada aquí
+            if (!ModoJuego.TieneAutoridad) return;
+
+            // Ventana de envío del atacante (LAN)
+            if (ModoJuego.EsMultijugador && estado == EstadoJuego.OleadaEnCurso && ventanaEnvioAbierta)
+            {
+                tiempoRondaRestante -= Time.deltaTime;
+                if (tiempoRondaRestante <= 0f) CerrarVentanaEnvio();
+            }
+
+            // Cuenta regresiva entre oleadas (modo Auto-Oleada / pausa entre rondas LAN)
             if ((estado == EstadoJuego.EsperandoInicio || estado == EstadoJuego.OleadaCompletada) && cuentaRegresivaOleada > 0f)
             {
                 cuentaRegresivaOleada -= Time.deltaTime;
@@ -179,7 +224,10 @@ namespace TowerDefenseGameplay
             enemigosRestantesEnOleada = spawnsPendientes + Enemigo.Activos.Count;
             if (estado == EstadoJuego.OleadaEnCurso && enemigosRestantesEnOleada <= 0)
             {
-                CompletarOleada();
+                // LAN: la ronda termina cuando se cerró la ventana de envío y no queda nada en cola
+                bool rondaLanAbierta = ModoJuego.EsMultijugador &&
+                    (ventanaEnvioAbierta || (ControladorAtacante.Instance != null && ControladorAtacante.Instance.EnviosPendientes > 0));
+                if (!rondaLanAbierta) CompletarOleada();
             }
 
             if (sobrecargaActiva)
@@ -205,6 +253,16 @@ namespace TowerDefenseGameplay
 
         private void VincularJugadorActivo()
         {
+            if (ModoJuego.EsMultijugador)
+            {
+                // En LAN el defensor juega con una copia nueva de su comandante (nivel 1, sin habilidades)
+                // para que la partida sea pareja; al final solo se guardan victorias/derrotas en el BST.
+                jugadorApoyo = null;
+                jugadorActivo = new Jugador(100, ModoJuego.IdDefensor, ModoJuego.NombreDefensor, 1, 0);
+                AsignarComandante(jugadorActivo, false);
+                return;
+            }
+
             ControladorArbolUI arbolUI = ControladorArbolUI.Instance != null ? ControladorArbolUI.Instance : FindFirstObjectByType<ControladorArbolUI>();
             if (arbolUI != null && arbolUI.arbolJugadores != null)
             {
@@ -292,6 +350,8 @@ namespace TowerDefenseGameplay
 
         private void GuardarProgreso()
         {
+            // En LAN el comandante juega con una copia: el historial lo guarda PantallaFinPartida
+            if (ModoJuego.EsMultijugador) return;
             if (ControladorArbolUI.Instance != null) ControladorArbolUI.Instance.GuardarArbolEnDisco();
         }
 
@@ -304,6 +364,18 @@ namespace TowerDefenseGameplay
         /// oro inicial y la topología de caminos del grafo.
         /// </summary>
         public void CargarNivel(int indice, bool notificar = true)
+        {
+            if (ModoJuego.EsMultijugador)
+            {
+                MostrarNotificacionLocal("🌐 En multijugador LAN no se puede cambiar de nivel.");
+                return;
+            }
+            ModoJuego.NivelUnJugador = Mathf.Clamp(indice, 0, Niveles.Length - 1);
+            CargarNivelInterno(indice, notificar, -1);
+        }
+
+        /// <param name="topologiaForzada">Topología del grafo; -1 = la del nivel.</param>
+        private void CargarNivelInterno(int indice, bool notificar, int topologiaForzada)
         {
             nivelActual = Mathf.Clamp(indice, 0, Niveles.Length - 1);
             ConfigNivel cfg = Nivel;
@@ -342,9 +414,11 @@ namespace TowerDefenseGameplay
             for (int i = 0; i < cooldowns.Length; i++) cooldowns[i] = 0f;
             semillaPartida = Random.Range(1, 999999);
             estado = EstadoJuego.EsperandoInicio;
+            ventanaEnvioAbierta = false;
+            tiempoRondaRestante = 0f;
             EstablecerVelocidad(1);
 
-            PathGraph.Asegurar().ConstruirAutomatico(cfg.topologia);
+            PathGraph.Asegurar().ConstruirAutomatico(topologiaForzada >= 0 ? topologiaForzada : cfg.topologia);
             ActualizarCasillasBloqueadas();
             ActualizarEscudoBase();
             if (RedTorresMST.Instance != null) RedTorresMST.Instance.Recalcular();
@@ -364,6 +438,8 @@ namespace TowerDefenseGameplay
         /// <summary>0 = pausa, 1/2/3 = velocidad de simulación.</summary>
         public void EstablecerVelocidad(int v)
         {
+            // En LAN ambos PCs deben avanzar al mismo ritmo: sin pausa ni cámara rápida
+            if (ModoJuego.EsMultijugador) v = 1;
             velocidadJuego = Mathf.Clamp(v, 0, 3);
             Time.timeScale = velocidadJuego;
             NotificarCambio();
@@ -371,6 +447,7 @@ namespace TowerDefenseGameplay
 
         public void AlternarAutoOleada()
         {
+            if (ModoJuego.EsMultijugador) return; // en LAN las rondas siempre son automáticas
             autoOleada = !autoOleada;
             if (autoOleada && estado == EstadoJuego.OleadaCompletada && cuentaRegresivaOleada <= 0f)
                 cuentaRegresivaOleada = tiempoEntreOleadas;
@@ -433,12 +510,22 @@ namespace TowerDefenseGameplay
 
         public int CantidadPlots => plotsOrdenados.Count;
 
+        /// <summary>Casillas en orden determinista (el índice identifica la casilla en la red LAN).</summary>
+        public IReadOnlyList<PlotTorre> Plots => plotsOrdenados;
+
         #endregion
 
         #region Entrada del Jugador sobre el Mapa
 
         private void GestionarEntradaMapa()
         {
+            // El atacante LAN no construye torres: su HUD maneja sus propios clics (habilidades con objetivo)
+            if (ModoJuego.EsAtacanteLocal)
+            {
+                LimpiarHover();
+                return;
+            }
+
             if (!EntradaJuego.CursorEnMundo(out Vector2 punto)) return;
 
             bool click = EntradaJuego.ClickIzquierdo;
@@ -454,6 +541,7 @@ namespace TowerDefenseGameplay
 
                 if (cancelar)
                 {
+                    frameCancelacion = Time.frameCount;
                     apuntandoBarricada = false;
                     MostrarNotificacion("Barricada cancelada.");
                     NotificarCambio();
@@ -476,7 +564,11 @@ namespace TowerDefenseGameplay
                 return;
             }
 
-            if (cancelar) SeleccionarTorre(null);
+            if (cancelar && (torreSeleccionada != null || EntradaJuego.ClickDerecho))
+            {
+                frameCancelacion = Time.frameCount;
+                SeleccionarTorre(null);
+            }
 
             // Casilla más cercana al cursor (tolerancia de medio tile)
             PlotTorre detectado = BuscarPlot(punto, false);
@@ -531,6 +623,14 @@ namespace TowerDefenseGameplay
                 else IntentarConstruir(plotBajoCursor);
             }
         }
+
+        private int frameCancelacion = -1;
+
+        /// <summary>
+        /// True si este frame el Esc/clic derecho ya se usó para cancelar algo en el mapa
+        /// (selección de torre o barricada); así no abre además el menú de pausa.
+        /// </summary>
+        public bool CanceloEsteFrame => frameCancelacion == Time.frameCount || apuntandoBarricada || torreSeleccionada != null;
 
         private static PlotTorre BuscarPlot(Vector2 punto, bool soloConTorre)
         {
@@ -594,17 +694,31 @@ namespace TowerDefenseGameplay
 
         private bool IntentarConstruir(PlotTorre plot)
         {
-            if (plot == null || plot.TieneTorre || plot.deshabilitado) return false;
+            return IntentarConstruir(plot, tipoTorreAConstruir);
+        }
 
-            int costo = ObtenerCostoTorre(tipoTorreAConstruir);
+        /// <summary>Construcción autoritativa (un jugador, host LAN o comando del defensor remoto).</summary>
+        public bool IntentarConstruir(PlotTorre plot, TipoTorre tipo)
+        {
+            if (plot == null || plot.TieneTorre || plot.deshabilitado) return false;
+            if (ModoJuego.EsMultijugador && estado == EstadoJuego.GameOver) return false;
+
+            int costo = ObtenerCostoTorre(tipo);
             if (oroActual < costo)
             {
-                MostrarNotificacion($"¡Oro insuficiente! {Torre.Nombre(tipoTorreAConstruir)} cuesta {costo} de oro (tienes {oroActual}).");
+                MostrarNotificacion($"¡Oro insuficiente! {Torre.Nombre(tipo)} cuesta {costo} de oro (tienes {oroActual}).");
                 Sonar(TipoSonido.Error);
                 return false;
             }
 
-            Torre t = plot.ColocarTorre(tipoTorreAConstruir, costo);
+            // Cliente LAN: el host valida y construye; aquí solo se envía la orden
+            if (ModoJuego.EsClienteRemoto)
+            {
+                ComandosJugador.ConstruirTorre(plot.indice, tipo);
+                return true;
+            }
+
+            Torre t = plot.ColocarTorre(tipo, costo);
             if (t == null) return false;
 
             oroActual -= costo;
@@ -671,6 +785,11 @@ namespace TowerDefenseGameplay
                     Sonar(TipoSonido.Error);
                     return false;
                 }
+                if (ModoJuego.EsClienteRemoto)
+                {
+                    ComandosJugador.MejorarTorre(t.IndicePlot);
+                    return true;
+                }
                 oroActual -= costo;
             }
 
@@ -694,6 +813,12 @@ namespace TowerDefenseGameplay
             {
                 MostrarNotificacion($"Esta torre pertenece a {t.propietarioNombre}.");
                 return false;
+            }
+            if (!remoto && ModoJuego.EsClienteRemoto)
+            {
+                if (torreSeleccionada == t) SeleccionarTorre(null);
+                ComandosJugador.VenderTorre(t.IndicePlot);
+                return true;
             }
 
             int reembolso = t.ValorVenta;
@@ -721,6 +846,7 @@ namespace TowerDefenseGameplay
             if (t == null) return;
             int n = System.Enum.GetValues(typeof(PrioridadObjetivo)).Length;
             t.prioridad = (PrioridadObjetivo)(((int)t.prioridad + 1) % n);
+            if (ModoJuego.EsClienteRemoto) ComandosJugador.CambiarPrioridad(t.IndicePlot, t.prioridad);
             OnTorreSeleccionada?.Invoke(torreSeleccionada);
         }
 
@@ -736,6 +862,20 @@ namespace TowerDefenseGameplay
 
         public void IniciarOleada()
         {
+            if (ModoJuego.EsMultijugador)
+            {
+                if (ModoJuego.EsClienteRemoto)
+                {
+                    ComandosJugador.IniciarOleadaYa();
+                    return;
+                }
+                if (estado == EstadoJuego.EsperandoJugadores || estado == EstadoJuego.GenerandoOleada ||
+                    estado == EstadoJuego.OleadaEnCurso || PartidaTerminada) return;
+                cuentaRegresivaOleada = 0f;
+                IniciarRondaMultijugador();
+                return;
+            }
+
             if (oleadasControladasPorAnfitrion)
             {
                 MostrarNotificacion("🌐 En esta sala el anfitrión decide cuándo inicia la oleada.");
@@ -907,6 +1047,77 @@ namespace TowerDefenseGameplay
             return e;
         }
 
+        #region Multijugador LAN: rondas controladas por el atacante
+
+        /// <summary>
+        /// Lo llama ServidorPartida cuando ambos jugadores cargaron la escena.
+        /// Empieza la preparación inicial (el defensor coloca sus primeras torres).
+        /// </summary>
+        public void IniciarPreparacionMultijugador()
+        {
+            if (!ModoJuego.EsMultijugador || !ModoJuego.EsHost) return;
+            if (estado != EstadoJuego.EsperandoJugadores) return;
+
+            estado = EstadoJuego.EsperandoInicio;
+            oleadaActual = 1;
+            totalOleadas = RondasMultijugador;
+            cuentaRegresivaOleada = preparacionInicialMultijugador;
+
+            if (ControladorAtacante.Instance != null) ControladorAtacante.Instance.AlIniciarPartida();
+
+            Notificar($"🛡️ {ModoJuego.NombreDefensor} (Defensor) vs ⚔️ {ModoJuego.NombreAtacante} (Atacante). " +
+                      $"{preparacionInicialMultijugador:0} s de preparación.", DestinoNotificacion.Ambos);
+            NotificarCambio();
+        }
+
+        private void IniciarRondaMultijugador()
+        {
+            estado = EstadoJuego.OleadaEnCurso;
+            ventanaEnvioAbierta = true;
+            tiempoRondaRestante = duracionVentanaRonda;
+
+            if (ControladorAtacante.Instance != null) ControladorAtacante.Instance.AlIniciarRonda(oleadaActual);
+
+            Notificar($"⚔️ ¡Ronda {oleadaActual}/{totalOleadas}! El atacante tiene {duracionVentanaRonda:0} s para enviar tropas.", DestinoNotificacion.Ambos);
+            Sonar(TipoSonido.Oleada);
+            NotificarCambio();
+        }
+
+        private void CerrarVentanaEnvio()
+        {
+            tiempoRondaRestante = 0f;
+            ventanaEnvioAbierta = false;
+            if (ControladorAtacante.Instance != null) ControladorAtacante.Instance.AlCerrarVentana();
+            Notificar("⏱️ Se cerró la ventana de envío. La ronda termina cuando no quede ningún enemigo.", DestinoNotificacion.Ambos);
+            NotificarCambio();
+        }
+
+        /// <summary>
+        /// Crea un enemigo enviado por el atacante que recorre la ruta indicada (calculada con Dijkstra).
+        /// </summary>
+        public Enemigo SpawnearEnemigoEnRuta(TipoEnemigo tipo, List<PathNode> ruta)
+        {
+            if (ruta == null || ruta.Count < 2 || PartidaTerminada) return null;
+
+            Enemigo e = SpawnearEnemigo(tipo, false);
+            Vector2 jitter = Random.insideUnitCircle * 0.12f;
+            e.transform.position = ruta[0].transform.position + new Vector3(jitter.x, jitter.y, 0f);
+            enemyMovement mov = e.GetComponent<enemyMovement>();
+            if (mov != null) mov.AsignarRuta(ruta);
+
+            if (ControladorAtacante.Instance != null) ControladorAtacante.Instance.AplicarModificadoresEnemigo(e);
+            NotificarCambio();
+            return e;
+        }
+
+        /// <summary>Compatibilidad: el fin de ronda se revisa en Update.</summary>
+        public void RevisarFinDeRonda()
+        {
+            NotificarCambio();
+        }
+
+        #endregion
+
         /// <summary>Mercenarios enviados por un rival en modo competitivo: se suman a la presión actual.</summary>
         public void RecibirMercenarios(TipoEnemigo tipo, int cantidad, string remitente)
         {
@@ -978,6 +1189,7 @@ namespace TowerDefenseGameplay
         public void EnemigoLlegoALaBase(int danio, Enemigo enemigo = null)
         {
             if (PartidaTerminada) return;
+            int danioOriginal = danio;
 
             if (escudoBaseActual > 0f)
             {
@@ -990,7 +1202,12 @@ namespace TowerDefenseGameplay
             if (danio > 0)
             {
                 vidaBaseActual -= danio;
-                MostrarNotificacion($"💥 ¡La base recibió {danio} de daño! Vida restante: {Mathf.Max(0f, vidaBaseActual):0}");
+                Notificar($"💥 ¡La base recibió {danio} de daño! Vida restante: {Mathf.Max(0f, vidaBaseActual):0}", DestinoNotificacion.Ambos);
+            }
+
+            if (ModoJuego.EsMultijugador && ControladorAtacante.Instance != null)
+            {
+                ControladorAtacante.Instance.AlGolpearBase(danioOriginal, danio);
             }
 
             EfectosVisualesManager fx = EfectosVisualesManager.Instance;
@@ -1048,9 +1265,15 @@ namespace TowerDefenseGameplay
                 jugadorActivo.AgregarPuntosHabilidad(1);
                 if (ControladorHabilidadesUI.Instance != null) ControladorHabilidadesUI.Instance.ActualizarTodo();
             }
-            MostrarNotificacion($"🏆 ¡OLEADA {oleadaActual} COMPLETADA!  +1 Punto de Habilidad 💎 | +{bonoOro} Oro 💰{extra}");
+            string nombreRonda = ModoJuego.EsMultijugador ? "RONDA" : "OLEADA";
+            MostrarNotificacion($"🏆 ¡{nombreRonda} {oleadaActual} COMPLETADA!  +1 Punto de Habilidad 💎 | +{bonoOro} Oro 💰{extra}");
             Sonar(TipoSonido.Oleada);
-            GuardarProgreso();
+            if (!ModoJuego.EsMultijugador) GuardarProgreso();
+
+            if (ModoJuego.EsMultijugador && ControladorAtacante.Instance != null)
+            {
+                ControladorAtacante.Instance.AlCompletarRonda(oleadaActual);
+            }
 
             if (oleadaActual >= totalOleadas)
             {
@@ -1059,7 +1282,8 @@ namespace TowerDefenseGameplay
             }
 
             oleadaActual++;
-            cuentaRegresivaOleada = autoOleada && !oleadasControladasPorAnfitrion ? tiempoEntreOleadas : 0f;
+            if (ModoJuego.EsMultijugador) cuentaRegresivaOleada = pausaEntreRondas;
+            else cuentaRegresivaOleada = autoOleada && !oleadasControladasPorAnfitrion ? tiempoEntreOleadas : 0f;
             NotificarCambio();
         }
 
@@ -1079,6 +1303,21 @@ namespace TowerDefenseGameplay
             estado = victoria ? EstadoJuego.Victoria : EstadoJuego.GameOver;
             apuntandoBarricada = false;
             cuentaRegresivaOleada = 0f;
+            ventanaEnvioAbierta = false;
+
+            if (ModoJuego.EsMultijugador)
+            {
+                // En LAN el resultado (ganador, BST y ranking) lo registra la pantalla de fin de partida
+                Notificar(victoria
+                    ? $"👑 ¡La base resistió las {totalOleadas} rondas! Gana el defensor: {ModoJuego.NombreDefensor}."
+                    : $"💀 ¡La base cayó! Gana el atacante: {ModoJuego.NombreAtacante}.", DestinoNotificacion.Ambos);
+                Sonar(victoria ? TipoSonido.Victoria : TipoSonido.Derrota);
+                NotificarCambio();
+                if (ServidorPartida.Instancia != null)
+                    ServidorPartida.Instancia.FinalizarPartida(victoria ? RolJugador.Defensor : RolJugador.Atacante);
+                return;
+            }
+
             int total = CalcularPuntajeFinal(victoria);
 
             // Registrar en el Leaderboard y en la ficha del comandante (BST)
@@ -1153,6 +1392,9 @@ namespace TowerDefenseGameplay
         public bool HabilidadDesbloqueada(HabilidadActiva h) => modoLaboratorio || TieneHabilidadDAG(IdHabilidad(h));
         public float CooldownRestante(HabilidadActiva h) => cooldowns[(int)h];
 
+        /// <summary>Recargas de las habilidades activas (el cliente LAN las recibe del host).</summary>
+        public float[] Cooldowns => cooldowns;
+
         public void UsarHabilidad(HabilidadActiva h)
         {
             if (PartidaTerminada) return;
@@ -1165,6 +1407,12 @@ namespace TowerDefenseGameplay
             if (cooldowns[(int)h] > 0f)
             {
                 MostrarNotificacion($"⏳ {NombreHabilidad(h)} en recarga: {cooldowns[(int)h]:0}s.");
+                return;
+            }
+            // Cliente LAN (defensor): la barricada se apunta aquí; el resto lo ejecuta el host
+            if (ModoJuego.EsClienteRemoto && h != HabilidadActiva.Barricada)
+            {
+                ComandosJugador.UsarHabilidadDefensa(h, -1, -1);
                 return;
             }
 
@@ -1195,6 +1443,24 @@ namespace TowerDefenseGameplay
         }
 
         /// <summary>Habilidad activada por otro jugador de la sala (sin validar desbloqueo ni recarga locales).</summary>
+        /// <summary>
+        /// Host LAN: habilidad pedida por el defensor remoto. Valida desbloqueo y recarga igual que en local.
+        /// </summary>
+        public void EjecutarHabilidadPorComando(HabilidadActiva h, int nodoA, int nodoB)
+        {
+            if (PartidaTerminada || !ModoJuego.EsHost) return;
+            if (h != HabilidadActiva.Barricada)
+            {
+                UsarHabilidad(h);
+                return;
+            }
+
+            if (!HabilidadDesbloqueada(h) || cooldowns[(int)h] > 0f) return;
+            PathGraph g = PathGraph.main;
+            if (g == null || nodoA < 0 || nodoB < 0 || nodoA >= g.nodos.Count || nodoB >= g.nodos.Count) return;
+            ColocarBarricada(g.nodos[nodoA], g.nodos[nodoB], false);
+        }
+
         public void EjecutarHabilidadRemota(HabilidadActiva h, int nodoA, int nodoB, string autor)
         {
             if (PartidaTerminada) return;
@@ -1218,7 +1484,7 @@ namespace TowerDefenseGameplay
             tiempoSobrecargaRestante = 10f;
             int enRed = 0;
             for (int i = 0; i < Torre.Activas.Count; i++) if (Torre.Activas[i] != null && Torre.Activas[i].gradoMST > 0) enRed++;
-            MostrarNotificacion($"⚡ ¡SOBRECARGA DE RED! +50% daño y doble cadencia en {enRed} torre(s) enlazada(s) por el MST durante 10s.");
+            Notificar($"⚡ ¡SOBRECARGA DE RED! +50% daño y doble cadencia en {enRed} torre(s) enlazada(s) por el MST durante 10s.", DestinoNotificacion.Ambos);
             if (EfectosVisualesManager.Instance != null)
             {
                 for (int i = 0; i < Torre.Activas.Count; i++)
@@ -1237,6 +1503,17 @@ namespace TowerDefenseGameplay
         private void ColocarBarricada(PathNode a, PathNode b, bool remoto)
         {
             if (PathGraph.main == null || a == null || b == null) return;
+
+            // Cliente LAN: el host coloca la barricada (y la replica en el estado)
+            if (!remoto && ModoJuego.EsClienteRemoto)
+            {
+                apuntandoBarricada = false;
+                BarricadaPreviaA = null;
+                BarricadaPreviaB = null;
+                ComandosJugador.UsarHabilidadDefensa(HabilidadActiva.Barricada, a.nodeId, b.nodeId);
+                NotificarCambio();
+                return;
+            }
 
             float costoAntes = PathGraph.main.CostoRutaActual();
             bool ok = PathGraph.main.BloquearArista(a, b, 15f);
@@ -1258,6 +1535,7 @@ namespace TowerDefenseGameplay
             MostrarNotificacion($"🚧 Barricada en N{a.nodeId}–N{b.nodeId}. Dijkstra recalculó la ruta: costo {costoAntes:0.0} → {costoDespues:0.0}. {enemyMovement.Activos.Count} enemigo(s) redirigido(s).");
 
             Vector3 medio = (a.transform.position + b.transform.position) * 0.5f;
+            if (ServidorPartida.Instancia != null) ServidorPartida.Instancia.RegistrarEfecto(TipoEfectoVisual.Barricada, medio, 1.2f);
             if (EfectosVisualesManager.Instance != null)
             {
                 EfectosVisualesManager.Instance.OndaExpansiva(medio, 1.2f, Paleta.Aviso, 0.45f);
@@ -1306,6 +1584,7 @@ namespace TowerDefenseGameplay
                     : destino + new Vector3(Random.Range(-1.5f, 1.5f), 8f, 0f);
                 Proyectil p = obj.AddComponent<Proyectil>();
                 p.ConfigurarHaciaPunto(destino, danio, 1.6f);
+                if (ServidorPartida.Instancia != null) ServidorPartida.Instancia.RegistrarEfecto(TipoEfectoVisual.Bombardeo, destino, 1.6f);
                 yield return new WaitForSeconds(0.1f);
             }
         }
@@ -1319,7 +1598,8 @@ namespace TowerDefenseGameplay
                 lista[i].Congelar(3.5f);
                 lista[i].DestruirEscudo();
             }
-            MostrarNotificacion($"❄️ ¡PULSO EMP CRIOGÉNICO! {lista.Count} enemigo(s) congelado(s) 3.5s y escudos destruidos.");
+            Notificar($"❄️ ¡PULSO EMP CRIOGÉNICO! {lista.Count} enemigo(s) congelado(s) 3.5s y escudos destruidos.", DestinoNotificacion.Ambos);
+            if (ServidorPartida.Instancia != null) ServidorPartida.Instancia.RegistrarEfecto(TipoEfectoVisual.PulsoEMP, Vector3.zero, 11f);
             EfectosVisualesManager fx = EfectosVisualesManager.Instance;
             if (fx != null)
             {
@@ -1336,6 +1616,11 @@ namespace TowerDefenseGameplay
 
         public void AlternarModoLaboratorio()
         {
+            if (ModoJuego.EsMultijugador)
+            {
+                MostrarNotificacionLocal("🧪 El Modo Laboratorio no está disponible en multijugador LAN.");
+                return;
+            }
             modoLaboratorio = !modoLaboratorio;
             MostrarNotificacion(modoLaboratorio
                 ? "🧪 Modo Laboratorio ACTIVADO: habilidades activas disponibles y atajos de prueba visibles."
@@ -1373,7 +1658,42 @@ namespace TowerDefenseGameplay
 
         #region Utilidades y Notificaciones
 
+        /// <summary>Notificación para el defensor (comportamiento original del juego).</summary>
         public void MostrarNotificacion(string mensaje)
+        {
+            Notificar(mensaje, DestinoNotificacion.Defensor);
+        }
+
+        /// <summary>
+        /// Envía una notificación al jugador indicado. En un jugador solo se muestran las del defensor;
+        /// en LAN el host muestra las suyas y reenvía al cliente las que le corresponden.
+        /// </summary>
+        public void Notificar(string mensaje, DestinoNotificacion destino)
+        {
+            if (!ModoJuego.EsMultijugador)
+            {
+                if (destino != DestinoNotificacion.Atacante) MostrarNotificacionLocal(mensaje);
+                return;
+            }
+
+            if (ModoJuego.EsClienteRemoto)
+            {
+                // En el cliente solo se generan mensajes locales (validaciones de UI, avisos propios)
+                MostrarNotificacionLocal(mensaje);
+                return;
+            }
+
+            bool localEsDestino = destino == DestinoNotificacion.Ambos ||
+                                  (destino == DestinoNotificacion.Defensor && ModoJuego.RolLocal == RolJugador.Defensor) ||
+                                  (destino == DestinoNotificacion.Atacante && ModoJuego.RolLocal == RolJugador.Atacante);
+            bool remotoEsDestino = destino == DestinoNotificacion.Ambos || !localEsDestino;
+
+            if (localEsDestino) MostrarNotificacionLocal(mensaje);
+            if (remotoEsDestino && ServidorPartida.Instancia != null) ServidorPartida.Instancia.EnviarNotificacion(mensaje);
+        }
+
+        /// <summary>Muestra el mensaje en el banner de este PC sin reenviarlo por red.</summary>
+        public void MostrarNotificacionLocal(string mensaje)
         {
             Debug.Log($"[GameManager] {mensaje}");
             OnNotificacion?.Invoke(mensaje);

@@ -59,6 +59,10 @@ public class Jugador
 
     public string NombreClaseActual => NombreClase(clase);
 
+    // Historial de partidas multijugador LAN (se guardan en el BST de comandantes)
+    public int victoriasMultijugador = 0;
+    public int derrotasMultijugador = 0;
+
     public Jugador()
     {
         this.vida = 100;

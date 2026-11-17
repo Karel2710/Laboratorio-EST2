@@ -48,6 +48,22 @@ public class LeaderboardJSON : MonoBehaviour
     private Text textoTabla;
     private EntradaLeaderboard ultimaEntrada;
 
+    // ── Acceso estático (lo usa la pantalla de fin de partida LAN) ──
+
+    /// <summary>Top 10 guardado en disco (lista vacía si no existe).</summary>
+    public static List<EntradaLeaderboard> CargarTop()
+    {
+        return Asegurar().tablaPuntajes;
+    }
+
+    /// <summary>Registra un puntaje de una partida multijugador LAN y devuelve el Top 10 actualizado.</summary>
+    public static List<EntradaLeaderboard> AgregarPuntajeGlobal(string nombre, int puntaje, bool victoria = false, int rondas = 0)
+    {
+        LeaderboardJSON lb = Asegurar();
+        lb.RegistrarResultado(nombre, puntaje, 1, rondas, victoria, "", "LAN");
+        return lb.tablaPuntajes;
+    }
+
     public static LeaderboardJSON Asegurar()
     {
         if (Instance != null) return Instance;

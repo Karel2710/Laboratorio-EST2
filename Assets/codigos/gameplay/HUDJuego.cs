@@ -24,6 +24,12 @@ namespace TowerDefenseGameplay
         private readonly Button[] btnHabilidades = new Button[4];
         private GameObject panelLab;
 
+        // Multijugador LAN y menú de pausa
+        private Text txtRival;
+        private Button btnComandantes, btnOnline, btnArmeria;
+        private RectTransform barraConstruccion, columnaHabilidades;
+        private GameObject panelPausa;
+
         private GameObject panelBanner;
         private Text txtBanner;
         private float bannerRestante = 0f;
@@ -72,8 +78,44 @@ namespace TowerDefenseGameplay
                 gm.OnFinPartida += MostrarFinPartida;
             }
             Paleta.OnCambio += ActualizarHUD;
+            AplicarVisibilidadSegunModo();
             ActualizarHUD();
-            MostrarBannerNotificacion("🎮 ¡Bienvenido Comandante! Elige una torre abajo, colócala en una casilla y pulsa ▶ Iniciar Oleada. (❓ Ayuda para ver las instrucciones)");
+            if (ModoJuego.EsAtacanteLocal)
+                MostrarBannerNotificacion("⚔️ Eres el ATACANTE: elige ruta (A/B/C) y envía tropas con las teclas 1-4. G abre tu DAG de ataque.");
+            else if (ModoJuego.EsMultijugador)
+                MostrarBannerNotificacion("🛡️ Eres el DEFENSOR: construye torres durante la preparación; el atacante decide qué enemigos salen.");
+            else
+                MostrarBannerNotificacion("🎮 ¡Bienvenido Comandante! Elige una torre abajo, colócala en una casilla y pulsa ▶ Iniciar Oleada. (❓ Ayuda para ver las instrucciones)");
+        }
+
+        /// <summary>
+        /// Oculta lo que no corresponde al modo/rol: en LAN no hay niveles, velocidad, laboratorio,
+        /// sala online ni cambio de comandante; el atacante no ve los controles del defensor.
+        /// </summary>
+        private void AplicarVisibilidadSegunModo()
+        {
+            bool lan = ModoJuego.EsMultijugador;
+            bool atacante = ModoJuego.EsAtacanteLocal;
+
+            for (int i = 0; i < btnNivel.Length; i++) if (btnNivel[i] != null) btnNivel[i].gameObject.SetActive(!lan);
+            for (int i = 0; i < btnVelocidad.Length; i++) if (btnVelocidad[i] != null) btnVelocidad[i].gameObject.SetActive(!lan);
+            if (btnAuto != null) btnAuto.gameObject.SetActive(!lan);
+            if (btnLab != null) btnLab.gameObject.SetActive(!lan);
+            if (btnComandantes != null) btnComandantes.gameObject.SetActive(!lan);
+            if (btnOnline != null) btnOnline.gameObject.SetActive(!lan);
+            if (txtRival != null) txtRival.gameObject.SetActive(lan);
+
+            if (atacante)
+            {
+                if (txtOro != null) txtOro.gameObject.SetActive(false);
+                if (txtPuntaje != null) txtPuntaje.gameObject.SetActive(false);
+                if (txtJugadorXP != null) txtJugadorXP.gameObject.SetActive(false);
+                if (txtPuntosDAG != null) txtPuntosDAG.gameObject.SetActive(false);
+                if (btnArmeria != null) btnArmeria.gameObject.SetActive(false);
+                if (btnIniciarOleada != null) btnIniciarOleada.gameObject.SetActive(false);
+                if (barraConstruccion != null) barraConstruccion.gameObject.SetActive(false);
+                if (columnaHabilidades != null) columnaHabilidades.gameObject.SetActive(false);
+            }
         }
 
         private void OnDestroy()
@@ -94,6 +136,13 @@ namespace TowerDefenseGameplay
         {
             GameManager gm = GameManager.Instance;
             if (gm == null) return;
+
+            // Menú de pausa (Esc). No se abre si ese Esc ya canceló algo en el mapa.
+            if (EntradaJuego.Escape && !UIFabricaLAN.EscribiendoEnCampo() && !gm.CanceloEsteFrame &&
+                (HUDAtacante.Instancia == null || !HUDAtacante.Instancia.EstaApuntando))
+            {
+                AlternarMenuPausa();
+            }
 
             // Banner con temporizador en tiempo real (funciona también en pausa)
             if (bannerRestante > 0f)
@@ -132,6 +181,8 @@ namespace TowerDefenseGameplay
             }
 
             ActualizarTextoOleada(gm);
+            if (txtRival != null && ModoJuego.EsMultijugador)
+                txtRival.text = $"🛡️ {ModoJuego.NombreDefensor}  vs  ⚔️ {ModoJuego.NombreAtacante}";
 
             UIFabrica.Rotular(btnAuto, gm.autoOleada ? "🔁 Auto: SÍ" : "🔁 Auto: NO");
             UIFabrica.Colorear(btnAuto, gm.autoOleada ? new Color(0.15f, 0.5f, 0.4f) : new Color(0.22f, 0.26f, 0.34f));
@@ -170,24 +221,44 @@ namespace TowerDefenseGameplay
         {
             if (txtOleadaInfo == null) return;
             bool puedeIniciar = false;
+            bool lan = ModoJuego.EsMultijugador;
+            string nombre = lan ? "Ronda" : "Oleada";
+            string rojo = Paleta.Hex(Paleta.Negativo);
 
             switch (gm.estado)
             {
+                case EstadoJuego.EsperandoJugadores:
+                    txtOleadaInfo.text = "🌐 Esperando al otro jugador...";
+                    break;
                 case EstadoJuego.GenerandoOleada:
                 case EstadoJuego.OleadaEnCurso:
-                    txtOleadaInfo.text = $"⚔️ Oleada {gm.oleadaActual}/{gm.totalOleadas} · Enemigos: <color={Paleta.Hex(Paleta.Negativo)}><b>{gm.enemigosRestantesEnOleada}</b></color>";
+                    if (lan)
+                    {
+                        string envio = gm.ventanaEnvioAbierta
+                            ? $"Envío: <color=#FFDD44>{gm.tiempoRondaRestante:0}s</color>"
+                            : "<color=#AAAAAA>Envío cerrado</color>";
+                        txtOleadaInfo.text = $"⚔️ Ronda {gm.oleadaActual}/{gm.totalOleadas} · {envio} · Enemigos: <color={rojo}><b>{gm.enemigosRestantesEnOleada}</b></color>";
+                    }
+                    else
+                    {
+                        txtOleadaInfo.text = $"⚔️ Oleada {gm.oleadaActual}/{gm.totalOleadas} · Enemigos: <color={rojo}><b>{gm.enemigosRestantesEnOleada}</b></color>";
+                    }
                     break;
                 case EstadoJuego.GameOver:
-                    txtOleadaInfo.text = $"<color={Paleta.Hex(Paleta.Negativo)}>💀 DERROTA · Base destruida</color>";
+                    txtOleadaInfo.text = lan
+                        ? $"<color={rojo}>💀 La base cayó · Gana el atacante</color>"
+                        : $"<color={rojo}>💀 DERROTA · Base destruida</color>";
                     break;
                 case EstadoJuego.Victoria:
-                    txtOleadaInfo.text = "<color=#FFDD44>👑 ¡VICTORIA TOTAL!</color>";
+                    txtOleadaInfo.text = lan
+                        ? "<color=#FFDD44>👑 La base resistió · Gana el defensor</color>"
+                        : "<color=#FFDD44>👑 ¡VICTORIA TOTAL!</color>";
                     break;
                 default:
-                    puedeIniciar = !gm.oleadasControladasPorAnfitrion;
+                    puedeIniciar = lan ? ModoJuego.EsDefensorLocal : !gm.oleadasControladasPorAnfitrion;
                     txtOleadaInfo.text = gm.cuentaRegresivaOleada > 0f
-                        ? $"⏳ Oleada {gm.oleadaActual}/{gm.totalOleadas} en <color=#FFDD44>{gm.cuentaRegresivaOleada:0.0}s</color>"
-                        : $"🛠️ Preparación · Oleada {gm.oleadaActual}/{gm.totalOleadas}";
+                        ? $"⏳ {nombre} {gm.oleadaActual}/{gm.totalOleadas} en <color=#FFDD44>{gm.cuentaRegresivaOleada:0.0}s</color>"
+                        : $"🛠️ Preparación · {nombre} {gm.oleadaActual}/{gm.totalOleadas}";
                     break;
             }
             if (btnIniciarOleada != null && btnIniciarOleada.gameObject.activeSelf != puedeIniciar)
@@ -201,7 +272,7 @@ namespace TowerDefenseGameplay
                 Button b = btnHabilidades[i];
                 if (b == null) continue;
                 HabilidadActiva h = (HabilidadActiva)i;
-                bool visible = gm.HabilidadDesbloqueada(h);
+                bool visible = gm.HabilidadDesbloqueada(h) && ModoJuego.EsDefensorLocal;
                 if (b.gameObject.activeSelf != visible) b.gameObject.SetActive(visible);
                 if (!visible) continue;
 
@@ -277,6 +348,8 @@ namespace TowerDefenseGameplay
             txtPuntaje = TextoBarra(barraEstado, "TxtPuntaje", 150);
             txtJugadorXP = TextoBarra(barraEstado, "TxtJugador", 300);
             txtPuntosDAG = TextoBarra(barraEstado, "TxtDAG", 160);
+            txtRival = TextoBarra(barraEstado, "TxtRival", 300);
+            txtRival.gameObject.SetActive(false);
 
             RectTransform espacio = UIFabrica.CrearContenedor(barraEstado, "Espacio");
             espacio.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
@@ -296,16 +369,16 @@ namespace TowerDefenseGameplay
 
             // ── 2. Barra de menús ─────────────────────────────────────────────
             RectTransform barraMenu = Barra(raiz, "BarraMenu", -46, 40, new Color(0.05f, 0.07f, 0.11f, 0.94f));
-            BotonBarra(barraMenu, "BtnHabilidadesDAG", "⚡ Armería / Mejoras", new Color(0.32f, 0.22f, 0.75f), 160,
+            btnArmeria = BotonBarra(barraMenu, "BtnHabilidadesDAG", "⚡ Armería / Mejoras", new Color(0.32f, 0.22f, 0.75f), 160,
                 () => { if (ControladorHabilidadesUI.Instance != null) ControladorHabilidadesUI.Instance.AlternarVisibilidadPanel(); });
-            BotonBarra(barraMenu, "BtnComandantesBST", "👥 Comandantes", new Color(0.12f, 0.45f, 0.65f), 135,
+            btnComandantes = BotonBarra(barraMenu, "BtnComandantesBST", "👥 Comandantes", new Color(0.12f, 0.45f, 0.65f), 135,
                 () => { if (ControladorArbolUI.Instance != null) ControladorArbolUI.Instance.AlternarVisibilidadPanel(); });
             btnGrafo = BotonBarra(barraMenu, "BtnVerGrafo", "🗺️ Ver Grafo Dijkstra", new Color(0.1f, 0.5f, 0.42f), 180, AlternarGrafo);
             BotonBarra(barraMenu, "BtnLabGrafos", "🔬 Laboratorio Grafos", new Color(0.45f, 0.3f, 0.6f), 175,
                 () => SimuladorGrafosUI.Asegurar().AlternarPanel());
             BotonBarra(barraMenu, "BtnRanking", "🏆 Ranking", new Color(0.62f, 0.46f, 0.08f), 110,
                 () => LeaderboardJSON.Asegurar().AlternarPanel());
-            BotonBarra(barraMenu, "BtnOnline", "🌐 Online / Multijugador", new Color(0.1f, 0.42f, 0.72f), 195,
+            btnOnline = BotonBarra(barraMenu, "BtnOnline", "🌐 Online / Multijugador", new Color(0.1f, 0.42f, 0.72f), 195,
                 () => ControladorOnlineUI.Asegurar().AlternarPanel());
 
             for (int i = 0; i < 3; i++)
@@ -337,10 +410,12 @@ namespace TowerDefenseGameplay
             });
             btnLab = BotonBarra(barraMenu, "BtnLab", "🧪", new Color(0.22f, 0.26f, 0.34f), 44,
                 () => { if (GameManager.Instance != null) GameManager.Instance.AlternarModoLaboratorio(); });
+            BotonBarra(barraMenu, "BtnMenuPrincipal", "🏠 Menú", new Color(0.2f, 0.26f, 0.36f), 85, AlternarMenuPausa);
 
             // ── 3. Barra inferior de construcción (6 torres) ──────────────────
             RectTransform barraConst = UIFabrica.CrearPanel(raiz, "BarraConstruccion", new Color(0.05f, 0.07f, 0.12f, 0.96f), new Color(0.3f, 0.6f, 0.85f, 0.6f));
             UIFabrica.Anclar(barraConst, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 12), new Vector2(1040, 72));
+            barraConstruccion = barraConst;
             HorizontalLayoutGroup hlgC = barraConst.gameObject.AddComponent<HorizontalLayoutGroup>();
             hlgC.padding = new RectOffset(10, 10, 8, 8);
             hlgC.spacing = 10;
@@ -362,6 +437,7 @@ namespace TowerDefenseGameplay
             // ── 4. Habilidades activas (derecha) ──────────────────────────────
             RectTransform colHab = UIFabrica.CrearContenedor(raiz, "ColumnaHabilidades");
             UIFabrica.Anclar(colHab, new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-12, 40), new Vector2(200, 330));
+            columnaHabilidades = colHab;
             VerticalLayoutGroup vlgH = colHab.gameObject.AddComponent<VerticalLayoutGroup>();
             vlgH.spacing = 8;
             vlgH.childControlWidth = true;
@@ -610,7 +686,12 @@ namespace TowerDefenseGameplay
                 "👁 Daltonismo: cambia verde/rojo por azul/naranja. Cada enemigo tiene una silueta distinta además del color. " +
                 "Todos los avisos sonoros tienen también un mensaje visual en el banner superior. 🔊 silencia el sonido.\n\n" +
                 "<color=#66DDFF><b>MULTIJUGADOR</b></color>\n" +
-                "🌐 Online: crea una sala (servidor TCP) o únete por IP/código en la red local; o usa la Sala Simulada para jugar con comandantes controlados por IA sin conexión.";
+                "🌐 Online: crea una sala (servidor TCP) o únete por IP/código en la red local; o usa la Sala Simulada para jugar con comandantes controlados por IA sin conexión.\n" +
+                "⚔️ Multijugador LAN (Atacante vs Defensor): desde el menú principal (o 🏠 Menú → Multijugador LAN) un PC crea la sala y el otro se une. " +
+                "El defensor construye torres; el atacante compra tropas con créditos y elige la Ruta A/B/C (Dijkstra) durante la ventana de envío de cada ronda. " +
+                "Gana el defensor si la base resiste 8 rondas.\n\n" +
+                "<color=#66DDFF><b>MENÚ DE PAUSA</b></color>\n" +
+                "Esc o 🏠 Menú: reanudar, cambiar a multijugador LAN, reiniciar o volver al menú principal.";
             panelAyuda.SetActive(false);
         }
 
@@ -652,7 +733,7 @@ namespace TowerDefenseGameplay
         private void MostrarFinPartida(bool victoria, int total)
         {
             GameManager gm = GameManager.Instance;
-            if (gm == null || panelFin == null) return;
+            if (gm == null || panelFin == null || ModoJuego.EsMultijugador) return;
 
             txtFinTitulo.text = victoria ? "👑 ¡VICTORIA!" : "💀 DERROTA";
             txtFinTitulo.color = victoria ? Paleta.Dorado : Paleta.Negativo;
@@ -684,6 +765,103 @@ namespace TowerDefenseGameplay
         {
             GameManager gm = GameManager.Instance;
             if (gm != null && !gm.PartidaTerminada && panelFin != null && panelFin.activeSelf) panelFin.SetActive(false);
+        }
+
+        #endregion
+
+        #region Menú de Pausa y Selección de Modo
+
+        public bool PausaAbierta => panelPausa != null && panelPausa.activeSelf;
+
+        public void AlternarMenuPausa()
+        {
+            if (panelPausa == null) ConstruirMenuPausa();
+            else panelPausa.SetActive(!panelPausa.activeSelf);
+            AplicarPausa(panelPausa.activeSelf);
+        }
+
+        /// <summary>En un jugador la pausa detiene el tiempo; en LAN la partida sigue (el otro jugador no espera).</summary>
+        private void AplicarPausa(bool activa)
+        {
+            if (ModoJuego.EsMultijugador) return;
+            GameManager gm = GameManager.Instance;
+            Time.timeScale = activa ? 0f : (gm != null ? Mathf.Max(1, gm.velocidadJuego) : 1f);
+            if (!activa && gm != null && gm.velocidadJuego == 0) gm.EstablecerVelocidad(1);
+        }
+
+        private static void SalirDeLaPartida()
+        {
+            Time.timeScale = 1f;
+            if (RedLAN.Instancia != null && RedLAN.Instancia.Activa) RedLAN.Instancia.Detener();
+        }
+
+        private void ConstruirMenuPausa()
+        {
+            Canvas canvas = UIFabricaLAN.CrearCanvas("Canvas_MenuPausaHUD", 180);
+            canvas.transform.SetParent(transform, false);
+            panelPausa = canvas.gameObject;
+
+            RectTransform oscurecer = UIFabricaLAN.CrearPanel(canvas.transform, "Oscurecer", new Color(0f, 0f, 0f, 0.75f));
+            UIFabricaLAN.Estirar(oscurecer);
+
+            RectTransform caja = UIFabricaLAN.CrearPanel(oscurecer, "CajaPausa", new Color(0.08f, 0.11f, 0.17f, 0.98f));
+            UIFabricaLAN.Anclar(caja, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(560, 480));
+            Outline borde = caja.gameObject.AddComponent<Outline>();
+            borde.effectColor = new Color(0.35f, 0.65f, 1f, 0.8f);
+            borde.effectDistance = new Vector2(2, -2);
+
+            VerticalLayoutGroup v = UIFabricaLAN.Vertical(caja, 14, new RectOffset(32, 32, 28, 28));
+            v.childForceExpandHeight = false;
+
+            Text titulo = UIFabricaLAN.CrearTexto(caja, "Titulo", "⏸️ MENÚ / SELECCIÓN DE MODO", 24, new Color(1f, 0.88f, 0.35f), TextAnchor.MiddleCenter);
+            UIFabricaLAN.Tamano(titulo, -1, 38);
+
+            string modoTexto = ModoJuego.EsMultijugador
+                ? $"Modo actual: <b>Multijugador LAN ({ModoJuego.NombreRol(ModoJuego.RolLocal)})</b>"
+                : "Modo actual: <b>Modo Historia (Un Jugador)</b>";
+            Text txtModo = UIFabricaLAN.CrearTexto(caja, "TxtModo", modoTexto, 14, new Color(0.75f, 0.85f, 0.95f), TextAnchor.MiddleCenter, FontStyle.Normal);
+            UIFabricaLAN.Tamano(txtModo, -1, 24);
+
+            Button btnReanudar = UIFabricaLAN.CrearBoton(caja, "BtnReanudar", "▶ Reanudar Partida", new Color(0.18f, 0.55f, 0.35f), 18);
+            UIFabricaLAN.Tamano(btnReanudar, -1, 48);
+            btnReanudar.onClick.AddListener(() =>
+            {
+                panelPausa.SetActive(false);
+                AplicarPausa(false);
+            });
+
+            Button btnIrMulti = UIFabricaLAN.CrearBoton(caja, "BtnIrMulti", "🌐 Cambiar a Modo Multijugador LAN", new Color(0.18f, 0.45f, 0.75f), 18);
+            UIFabricaLAN.Tamano(btnIrMulti, -1, 48);
+            btnIrMulti.onClick.AddListener(() =>
+            {
+                SalirDeLaPartida();
+                ModoJuego.IniciadoDesdeMenu = false;
+                MenuMultijugadorUI.AbrirSalaDirectamenteAlCargar = true;
+                UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenu");
+            });
+
+            // En LAN reiniciar dejaría la sala sin conexión: solo existe en el modo historia
+            if (!ModoJuego.EsMultijugador)
+            {
+                Button btnReiniciar = UIFabricaLAN.CrearBoton(caja, "BtnReiniciar", "🔄 Reiniciar Partida", new Color(0.72f, 0.45f, 0.15f), 18);
+                UIFabricaLAN.Tamano(btnReiniciar, -1, 46);
+                btnReiniciar.onClick.AddListener(() =>
+                {
+                    panelPausa.SetActive(false);
+                    Time.timeScale = 1f;
+                    if (GameManager.Instance != null) GameManager.Instance.ReiniciarNivel();
+                });
+            }
+
+            Button btnMenu = UIFabricaLAN.CrearBoton(caja, "BtnVolverMenu", "🏠 Volver al Menú Principal", new Color(0.35f, 0.22f, 0.25f), 18);
+            UIFabricaLAN.Tamano(btnMenu, -1, 46);
+            btnMenu.onClick.AddListener(() =>
+            {
+                SalirDeLaPartida();
+                ModoJuego.IniciadoDesdeMenu = false;
+                ModoJuego.ConfigurarUnJugador();
+                UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenu");
+            });
         }
 
         #endregion

@@ -272,6 +272,13 @@ public class ControladorArbolUI : MonoBehaviour
     {
         if (j == null) return;
 
+        // En LAN el comandante de cada rol se elige en el menú y no se cambia a mitad de partida
+        if (ModoJuego.EsMultijugador)
+        {
+            MostrarMensajeFeedback("En multijugador el comandante se elige en el menú LAN.", new Color(1f, 0.75f, 0.2f));
+            return;
+        }
+
         if (GameManager.Instance != null)
         {
             GameManager.Instance.AsignarComandante(j, false);
@@ -853,6 +860,12 @@ public class ControladorArbolUI : MonoBehaviour
 
     public void AsignarComandanteDeApoyo()
     {
+        if (ModoJuego.EsMultijugador)
+        {
+            MostrarMensajeFeedback("En multijugador el comandante se elige en el menú LAN.", new Color(1f, 0.75f, 0.2f));
+            return;
+        }
+
         string textoId = inputId != null && !string.IsNullOrEmpty(inputId.text.Trim()) ? inputId.text.Trim()
             : (inputBuscarId != null ? inputBuscarId.text.Trim() : string.Empty);
 

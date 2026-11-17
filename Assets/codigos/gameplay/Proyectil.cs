@@ -28,6 +28,24 @@ namespace TowerDefenseGameplay
         private bool impacto = false;
         private Transform municion3D;   // flecha o bala de cañón del kit Kenney en la vista 2.5D
         private float escalaVisual = 1f;
+        private bool soloVisual = false;
+
+        /// <summary>
+        /// Cliente LAN: proyectil que solo se dibuja (el daño ya lo calculó el host).
+        /// El objetivo es la réplica visual del enemigo.
+        /// </summary>
+        public void ConfigurarVisual(Enemigo replica, TipoDanio tipo, bool critico, bool ralentizar, bool splash, bool congelar)
+        {
+            soloVisual = true;
+            objetivo = replica;
+            tipoDanio = tipo;
+            esCritico = critico;
+            aplicaRalentizacion = ralentizar;
+            esAreaSplash = splash;
+            congelacionTotal = congelar;
+            ultimaPosicionConocida = replica != null ? replica.PuntoImpacto : transform.position;
+            AsegurarVisuales();
+        }
 
         public void Configurar(Enemigo target, float danioBase, bool critico, bool ralentizar, bool splash = false, bool congelar = false)
         {
@@ -172,6 +190,24 @@ namespace TowerDefenseGameplay
         {
             impacto = true;
             EfectosVisualesManager fx = EfectosVisualesManager.Instance;
+
+            if (soloVisual)
+            {
+                if (fx != null)
+                {
+                    if (esAreaSplash)
+                    {
+                        fx.OndaExpansiva(transform.position, radioSplash, new Color(1f, 0.55f, 0.15f), 0.3f);
+                        fx.Explosion(transform.position, new Color(1f, 0.6f, 0.2f), 10, 3.5f);
+                    }
+                    else
+                    {
+                        fx.Explosion(transform.position, spriteRenderer != null ? spriteRenderer.color : Color.white, 3, 1.6f);
+                    }
+                }
+                Destroy(gameObject);
+                return;
+            }
 
             if (esAreaSplash)
             {
